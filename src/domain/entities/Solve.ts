@@ -1,11 +1,11 @@
 export interface Solve {
     id?: number;
     date: Date;
-    dateStr: string; // Para buscar por día rápidamente (YYYY-MM-DD)
-    time: number;
+    dateStr: string; // YYYY-MM-DD
+    time: number; // in seconds, 0 for DNF
     scramble: string;
     comment: string;
-    block: 'Sprint' | 'Resistencia';
+    block: 'Speedsolving' | 'Case recognition';
     oblCase?: string;
     isCsp: boolean;
     isObl: boolean;

@@ -10,28 +10,32 @@ export const OBL_BY_PRIORITY = [
 
 export const OBL_BY_SLICES = [
     {
+        category: "Base / Fast Cases",
+        cases: ["line/line", "4e/4e", "L/L", "3e/3e", "L/line", "1e/1e"]
+    },
+    {
         category: "1 Slicer",
-        cases: ["Good Kites"]
+        cases: ["good kite/kite"]
     },
     {
         category: "2 Slicers",
-        cases: ["Copps", "Good pairs", "Good thumbs/thumb", "Good Ns", "Bad Ns"]
+        cases: ["copp/copp", "good pair/pair", "good thumb/thumb", "good N/N"]
     },
     {
         category: "3 Slicers",
-        cases: ["Good pair/arrow", "Good arrows", "Bad arrows", "Gem/axe", "Good Knight/axe", "Bad knight/axe", "Good bunnies", "Yoshi/shell", "Good Yoshi/Bird", "Bad bird/yoshi", "Good kite/cut", "Good kite/N", "Good Ts", "Bad Ts", "Good T/Tie", "Bad T/Tie", "Good cuts", "Good Ties", "Bad ties"]
+        cases: ["good arrow/pair", "good arrow/arrow", "bad arrow/arrow", "gem/axe", "good knight/axe", "good bunny/bunny", "yoshi/shell", "good yoshi/bird", "good kite/cut", "good kite/N", "good T/T", "good cut/cut", "good tie/tie", "bad tie/tie", "good T/tie"]
     },
     {
         category: "4 Slicers",
-        cases: ["cadjs", "Bad pairs", "Bad pair/arrow", "Gems", "Gem/Knight", "Gem/Squid", "LR and RL Knights", "RR and LL Knights", "Knight/Squid", "Axe/Squid", "Good thumb/bunny", "Bad thumb/bunny", "Shell/Shell", "Shell/Bird", "Shell/Hazard", "Good birds", "Bad birds", "Bird/Hazard", "Hazard/yoshi", "Kite/T", "Bad Kite/N", "Bad bird/yoshi", "Kite/Tie", "Cut/T", "Good Cut/N", "Bad Cut/N", "Bad Ns", "Bad knight/axe", "Cut/tie", "Bad tie/tie", "Bad T/Tie", "Bad Ts", "LR and RL arrows"]
+        cases: ["cadj/cadj", "bad pair/pair", "bad arrow/pair", "gem/gem", "gem/knight", "gem/squid", "good knight/knight", "bad knight/knight", "squid/knight", "squid/axe", "good thumb/bunny", "bad thumb/bunny", "shell/shell", "shell/bird", "shell/hazard", "good bird/bird", "bad bird/bird", "bird/hazard", "yoshi/hazard", "kite/T", "bad kite/N", "kite/tie", "cut/T", "good cut/N", "bad cut/N", "cut/tie", "bad knight/axe", "bad T/tie", "bad T/T"]
     },
     {
         category: "5 Slicers",
-        cases: ["1c/1c", "3c/3c", "copp/cadj", "cadj/copp", "Squid/squid", "Hazards", "Bad thumbs LR and RL", "Bad birds", "Bad kites", "N/T", "N/Tie", "Bad N/Cut", "Yoshi/Yoshis", "RR and LL Axe", "RL and LR Axe", "RR and LL Knight", "Bad bunnies"]
+        cases: ["1c/1c", "3c/3c", "cadj/copp", "squid/squid", "hazard/hazard", "bad thumb/thumb", "bad kite/kite", "T/N", "tie/N", "bad yoshi/bird", "same yoshi/yoshi", "diff yoshi/yoshi", "same axe/axe", "diff axe/axe", "bad bunny/bunny", "bad N/N"]
     },
     {
         category: "6 Slicers",
-        cases: ["Bad Kite/cut", "Bad cuts"]
+        cases: ["bad kite/cut", "bad cut/cut"]
     }
 ];
 

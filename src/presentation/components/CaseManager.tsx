@@ -55,8 +55,6 @@ export const CaseManager: React.FC<CaseManagerProps> = ({ category }) => {
     const learnedCount = savedCases.length;
     const progressPercent = totalCases === 0 ? 0 : Math.round((learnedCount / totalCases) * 100);
 
-    // --- MANEJADORES DE DB ---
-    // Corregido: value ahora es estrictamente string o boolean en lugar de 'any'
     const handleFieldChange = async (caseName: string, field: string, value: string | boolean) => {
         const id = `${category}-${caseName}`;
         const existing = caseMap.get(caseName) || { id, category, caseName, status: 'Learning' as CaseStatus };
@@ -72,8 +70,6 @@ export const CaseManager: React.FC<CaseManagerProps> = ({ category }) => {
 
     return (
         <div className="flex h-[calc(100vh-8rem)] flex-col overflow-hidden rounded-xl border border-gray-800 bg-gray-900 p-6">
-
-            {/* HEADER */}
             <div className="mb-6 shrink-0 space-y-4">
                 <div className="flex items-center justify-between">
                     <h2 className="flex items-center gap-2 text-2xl font-black text-white">
@@ -108,7 +104,6 @@ export const CaseManager: React.FC<CaseManagerProps> = ({ category }) => {
                 </div>
             </div>
 
-            {/* BODY (Scrollable) */}
             <div className="custom-scrollbar flex-1 space-y-8 overflow-y-auto pr-2">
                 {groups.map((group, groupIdx) => (
                     <div key={groupIdx} className="space-y-3">
@@ -121,7 +116,6 @@ export const CaseManager: React.FC<CaseManagerProps> = ({ category }) => {
                                 const savedData = caseMap.get(item.name);
                                 const currentStatus = savedData?.status || 'Unlearned';
 
-                                // Campos CSP
                                 const isGoodAlg = savedData?.isGoodAlg || false;
                                 const isBadAlg = savedData?.isBadAlg || false;
                                 const evilness: EvilnessType = savedData?.evilness || 'Unrated';
@@ -151,10 +145,8 @@ export const CaseManager: React.FC<CaseManagerProps> = ({ category }) => {
                                                 <option value="Mastered">Mastered ✓</option>
                                             </select>
 
-                                            {/* Controles Exclusivos CSP */}
                                             {category === 'CSP' && (
                                                 <div className="mt-1 space-y-2 border-t border-gray-700 pt-2">
-                                                    {/* Checkboxes Independientes */}
                                                     <div className="flex gap-2">
                                                         <label className={`flex-1 flex items-center justify-center gap-1 text-[10px] py-1 border rounded cursor-pointer transition ${isGoodAlg ? 'bg-emerald-900/40 border-emerald-500 text-emerald-400' : 'bg-black border-gray-700 text-gray-500 hover:border-gray-500'}`}>
                                                             <input type="checkbox" className="hidden" checked={isGoodAlg} onChange={(e) => handleFieldChange(item.name, 'isGoodAlg', e.target.checked)} />
@@ -166,20 +158,24 @@ export const CaseManager: React.FC<CaseManagerProps> = ({ category }) => {
                                                         </label>
                                                     </div>
 
-                                                    {/* Evilness Selector */}
                                                     <div className="flex overflow-hidden rounded border border-gray-700 bg-black">
                                                         <button
-                                                            onClick={() => handleFieldChange(item.name, 'evilness', evilness === 'Evil' ? 'Unrated' : 'Evil')}
-                                                            className={`flex-1 flex items-center justify-center gap-1 text-[10px] py-1 transition ${evilness === 'Evil' ? 'bg-orange-900/50 text-orange-500' : 'text-gray-500 hover:bg-gray-800'}`}
-                                                        >
-                                                            <Flame className="h-3 w-3" /> Evil
-                                                        </button>
-                                                        <div className="w-px bg-gray-700"></div>
-                                                        <button
-                                                            onClick={() => handleFieldChange(item.name, 'evilness', evilness === 'Nice' ? 'Unrated' : 'Nice')}
-                                                            className={`flex-1 flex items-center justify-center gap-1 text-[10px] py-1 transition ${evilness === 'Nice' ? 'bg-blue-900/50 text-blue-400' : 'text-gray-500 hover:bg-gray-800'}`}
+                                                            onClick={() => handleFieldChange(item.name, 'evilness', 'Nice')}
+                                                            className={`flex-1 flex items-center justify-center gap-1 text-[10px] py-1.5 border-r border-gray-700 transition ${evilness === 'Nice' ? 'bg-blue-900/50 text-blue-400 font-bold' : 'text-gray-500 hover:bg-gray-800'}`}
                                                         >
                                                             <Smile className="h-3 w-3" /> Nice
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleFieldChange(item.name, 'evilness', 'Unrated')}
+                                                            className={`flex-1 flex items-center justify-center text-[10px] py-1.5 border-r border-gray-700 transition ${evilness === 'Unrated' ? 'bg-gray-800 text-gray-300 font-bold' : 'text-gray-600 hover:bg-gray-800'}`}
+                                                        >
+                                                            -
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleFieldChange(item.name, 'evilness', 'Evil')}
+                                                            className={`flex-1 flex items-center justify-center gap-1 text-[10px] py-1.5 transition ${evilness === 'Evil' ? 'bg-orange-900/50 text-orange-500 font-bold' : 'text-gray-500 hover:bg-gray-800'}`}
+                                                        >
+                                                            <Flame className="h-3 w-3" /> Evil
                                                         </button>
                                                     </div>
                                                 </div>

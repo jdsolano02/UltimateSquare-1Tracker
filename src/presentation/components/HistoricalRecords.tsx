@@ -1,8 +1,8 @@
-﻿import React, { useState } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../infrastructure/database/db';
 import { parseCsTimerExport } from '../../infrastructure/parsers/CsTimerParser';
-import { Trophy, UploadCloud, CheckCircle, AlertTriangle, Trash2, Loader2 } from 'lucide-react';
+import { Trophy, UploadCloud, CheckCircle, AlertTriangle, Trash2, Loader2, Database, FileUp } from 'lucide-react';
 
 interface PRRecord {
     type: string;
@@ -11,215 +11,272 @@ interface PRRecord {
 }
 
 export const HistoricalRecords = () => {
-    const [rawText, setRawText] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
+    const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
     const [status, setStatus] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
+    const [fileName, setFileName] = useState<string | null>(null);
+
+    const [prs, setPrs] = useState<PRRecord[]>([]);
+    const [isCalculating, setIsCalculating] = useState(true);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+    const allSolves = useLiveQuery(async () => {
+        try {
+            const data = await db.solves.toArray();
+            data.sort((a, b) => {
+                const dA = a.date ? new Date(a.date).getTime() : 0;
+                const dB = b.date ? new Date(b.date).getTime() : 0;
+                return dA - dB;
+            });
+            return data;
+        } catch (error) { // FIX: Cambiado a 'error' y lo usamos abajo
+            console.error("Error reading database:", error);
+            return [];
+        }
+    }, [refreshTrigger]) || [];
 
     const calculateAvg = (times: number[], size: number): number => {
         if (times.length !== size) return Infinity;
-        const trim = size === 3 ? 0 : Math.ceil(size * 0.05);
+        if (size === 3) return times.reduce((a, b) => a + b, 0) / 3;
+
+        const trim = Math.ceil(size * 0.05);
         const sorted = [...times].sort((a, b) => a - b);
         const trimmed = sorted.slice(trim, size - trim);
         const sum = trimmed.reduce((a, b) => a + b, 0);
         return sum / trimmed.length;
     };
 
-    // Dexie's useLiveQuery manejará el estado de carga (devuelve 'undefined' mientras procesa)
-    // y se actualizará automáticamente si db.solves cambia. ¡Adiós useEffect!
-    const prs = useLiveQuery(async () => {
-        try {
-            const allSolves = await db.solves.orderBy('date').toArray();
-            const validSolves = allSolves.filter(s => s.time > 0);
+    useEffect(() => {
+        let isMounted = true;
 
-            const categories = [
-                { label: 'Single', size: 1 },
-                { label: 'Mo3', size: 3 },
-                { label: 'Ao5', size: 5 },
-                { label: 'Ao12', size: 12 },
-                { label: 'Ao25', size: 25 },
-                { label: 'Ao50', size: 50 },
-                { label: 'Ao100', size: 100 },
-                { label: 'Ao500', size: 500 },
-                { label: 'Ao1000', size: 1000 },
-                { label: 'Ao2000', size: 2000 },
-                { label: 'Ao4000', size: 4000 },
-            ];
+        const crunchData = async () => {
+            if (isMounted) setIsCalculating(true);
 
-            const records: PRRecord[] = [];
+            try {
+                if (allSolves.length === 0) {
+                    if (isMounted) { setPrs([]); setIsCalculating(false); }
+                    return;
+                }
 
-            for (const cat of categories) {
-                if (validSolves.length < cat.size) continue;
+                await new Promise(resolve => setTimeout(resolve, 50));
+                if (!isMounted) return;
 
-                let best = Infinity;
-                let bestDateStr = '';
+                const validSolves = allSolves.filter(s => Number(s.time) > 0);
+                const categories = [1, 3, 5, 12, 50, 100, 200, 500, 1000, 2000, 3000, 4000, 5000, 10000];
+                const records: PRRecord[] = [];
+                const timesOnly = validSolves.map(s => Number(s.time));
 
-                if (cat.size === 1) {
-                    for (const solve of validSolves) {
-                        if (solve.time < best) {
-                            best = solve.time;
-                            bestDateStr = solve.dateStr;
+                for (const size of categories) {
+                    if (validSolves.length < size) continue;
+                    let best = Infinity;
+                    let bestDateStr = '';
+
+                    if (size === 1) {
+                        for (const solve of validSolves) {
+                            if (Number(solve.time) < best) {
+                                best = Number(solve.time);
+                                bestDateStr = solve.dateStr;
+                            }
+                        }
+                    } else {
+                        for (let i = 0; i <= timesOnly.length - size; i++) {
+                            const window = timesOnly.slice(i, i + size);
+                            const currentAvg = calculateAvg(window, size);
+
+                            if (currentAvg < best) {
+                                best = currentAvg;
+                                bestDateStr = validSolves[i + size - 1].dateStr;
+                            }
+
+                            if (i % 500 === 0) {
+                                await new Promise(resolve => setTimeout(resolve, 0));
+                                if (!isMounted) return;
+                            }
                         }
                     }
-                } else {
-                    const timesOnly = validSolves.map(s => s.time);
-                    for (let i = 0; i <= timesOnly.length - cat.size; i++) {
-                        const window = timesOnly.slice(i, i + cat.size);
-                        const currentAvg = calculateAvg(window, cat.size);
 
-                        if (currentAvg < best) {
-                            best = currentAvg;
-                            bestDateStr = validSolves[i + cat.size - 1].dateStr;
-                        }
+                    if (best !== Infinity) {
+                        records.push({
+                            type: size === 1 ? 'Single' : size === 3 ? 'Mo3' : `Ao${size}`,
+                            time: best.toFixed(2),
+                            date: bestDateStr
+                        });
                     }
                 }
 
-                if (best !== Infinity) {
-                    records.push({
-                        type: cat.label === 'Single' ? 'Single' : cat.label,
-                        time: best.toFixed(2),
-                        date: bestDateStr
-                    });
+                if (isMounted) {
+                    setPrs(records);
+                    setIsCalculating(false);
                 }
+            } catch (error) {
+                console.error("Crash prevented in Historical Records:", error);
+                if (isMounted) setIsCalculating(false);
             }
+        };
 
-            return records;
-        } catch (error) {
-            console.error("Error calculating PRs:", error);
-            return [];
-        }
-    }, []);
+        crunchData();
+        return () => { isMounted = false; };
+    }, [allSolves.length]);
 
-    // Variables derivadas para simplificar el renderizado
-    const isLoadingPrs = prs === undefined;
-    const recordsToDisplay = prs || [];
+    const handleHistoricalFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
 
-    const handleHistoricalImport = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!rawText.trim()) return;
+        setFileName(file.name);
         setIsProcessing(true);
         setStatus(null);
+        setImportProgress({ current: 0, total: 0 });
 
-        try {
-            const parsedSolves = parseCsTimerExport(rawText, 'Resistencia');
-            if (parsedSolves.length === 0) throw new Error("No valid solves found in CSV.");
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const rawText = event.target?.result as string;
+                const parsedSolves = parseCsTimerExport(rawText, 'Speedsolving');
 
-            let addedCount = 0;
-            for (const solve of parsedSolves) {
-                const isDuplicate = await db.solves
-                    .where({ dateStr: solve.dateStr, scramble: solve.scramble })
-                    .first();
+                if (parsedSolves.length === 0) throw new Error("No valid solves found in CSV.");
 
-                if (!isDuplicate && solve.time > 0) {
-                    await db.solves.add(solve);
-                    addedCount++;
+                setImportProgress({ current: 0, total: parsedSolves.length });
+                let addedCount = 0;
+
+                for (let i = 0; i < parsedSolves.length; i++) {
+                    const solve = parsedSolves[i];
+                    const isDuplicate = await db.solves
+                        .where({ dateStr: solve.dateStr, scramble: solve.scramble })
+                        .first();
+
+                    if (!isDuplicate && Number(solve.time) > 0) {
+                        await db.solves.add(solve);
+                        addedCount++;
+                    }
+
+                    if (i % 50 === 0) {
+                        setImportProgress({ current: i + 1, total: parsedSolves.length });
+                        await new Promise(resolve => setTimeout(resolve, 0));
+                    }
                 }
+
+                setImportProgress({ current: parsedSolves.length, total: parsedSolves.length });
+                setStatus({ message: `Historical Sync Complete: ${addedCount} new solves added.`, type: 'success' });
+                setRefreshTrigger(prev => prev + 1);
+
+            } catch (error) {
+                console.error('Historical Import Error:', error);
+                setStatus({ message: 'Error processing CSV data.', type: 'error' });
+            } finally {
+                setIsProcessing(false);
             }
+        };
+        reader.readAsText(file);
+        e.target.value = '';
+    };
 
-            setStatus({ message: `Historical Sync Complete: ${addedCount} new solves added.`, type: 'success' });
-            setRawText('');
-            // Ya no hace falta recalcular manualmente, useLiveQuery lo detecta solo y refresca la pantalla.
-
-        } catch (error) {
-            console.error('Historical Import Error:', error);
-            setStatus({ message: 'Error processing CSV data. Make sure it is a valid CsTimer export.', type: 'error' });
-        } finally {
-            setIsProcessing(false);
+    const handleClearSolves = async () => {
+        if (window.confirm("WARNING: This will delete ALL your SOLVES. Your case progress will remain. Are you sure?")) {
+            await db.solves.clear();
+            setRefreshTrigger(prev => prev + 1);
         }
     };
 
-    const handleFactoryReset = async () => {
-        const confirmed = window.confirm("WARNING: This will permanently delete ALL your solves and case progress. Are you absolutely sure?");
-        if (confirmed) {
-            const doubleCheck = window.confirm("Are you REALLY sure? This action cannot be undone.");
-            if (doubleCheck) {
-                try {
-                    await db.solves.clear();
-                    await db.cases.clear();
-                    alert("Database wiped successfully. Reloading...");
-                    window.location.reload();
-                } catch (error) {
-                    console.error("Error clearing database:", error);
-                    alert("An error occurred while wiping the database.");
-                }
-            }
+    const handleClearCases = async () => {
+        if (window.confirm("WARNING: This will reset your CASE PROGRESS (OBL/CSP/EP) back to 0. Solves will remain. Are you sure?")) {
+            await db.cases.clear();
+            alert("Case Tracker cleared successfully.");
         }
     };
 
     return (
         <div className="space-y-6">
-            {/* INGESTA HISTÓRICA */}
             <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 shadow-xl">
                 <h2 className="mb-4 flex items-center gap-2 text-xl font-bold text-white">
                     <UploadCloud className="text-blue-500" /> Import Historical Data
                 </h2>
-                <p className="mb-4 text-xs text-gray-400">Paste your complete CsTimer CSV export here. Duplicates will be automatically ignored.</p>
+                <p className="mb-4 text-xs text-gray-400">Upload your complete CsTimer CSV export here. Duplicates are auto-ignored.</p>
 
-                <form onSubmit={handleHistoricalImport} className="space-y-4">
-                    <textarea
-                        value={rawText}
-                        onChange={(e) => setRawText(e.target.value)}
-                        disabled={isProcessing}
-                        placeholder="Paste full CSV data here..."
-                        className="w-full h-32 bg-gray-950 border border-gray-800 rounded-lg p-3 text-sm text-gray-300 font-mono focus:border-blue-500 outline-none"
-                    />
-                    <button
-                        type="submit"
-                        disabled={!rawText.trim() || isProcessing}
-                        className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-3 font-bold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                        {isProcessing ? <><Loader2 className="h-4 w-4 animate-spin" /> Processing Data...</> : 'Sync Historical Data'}
-                    </button>
+                <div className="space-y-4">
+                    <div className="group relative flex h-32 w-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-gray-700 bg-gray-950 transition hover:border-blue-500">
+                        <input
+                            type="file"
+                            accept=".csv,.txt"
+                            onChange={handleHistoricalFileUpload}
+                            disabled={isProcessing}
+                            className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+                        />
+                        {isProcessing ? (
+                            <div className="flex w-full flex-col items-center px-8">
+                                <span className="mb-2 text-sm font-bold text-blue-400">
+                                    Processing: {importProgress.current} / {importProgress.total}
+                                </span>
+                                <div className="h-2 w-full overflow-hidden rounded-full bg-gray-800">
+                                    <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${importProgress.total === 0 ? 0 : (importProgress.current / importProgress.total) * 100}%` }} />
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center text-gray-500 transition group-hover:text-blue-400">
+                                <FileUp className="mb-2 h-8 w-8" />
+                                <span className="text-sm font-bold">{fileName ? fileName : 'Click or Drag CSV here'}</span>
+                            </div>
+                        )}
+                    </div>
 
                     {status && (
                         <div className={`flex items-center gap-2 p-3 rounded-lg border text-sm ${status.type === 'success' ? 'bg-emerald-900/30 border-emerald-500/50 text-emerald-400' : 'bg-red-900/30 border-red-500/50 text-red-400'}`}>
                             <CheckCircle className="h-4 w-4" /> {status.message}
                         </div>
                     )}
-                </form>
+                </div>
             </div>
 
-            {/* TABLA DE RECORDS ABSOLUTOS */}
             <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 shadow-xl">
-                <h2 className="mb-4 flex items-center gap-2 text-xl font-bold text-white">
-                    <Trophy className="text-yellow-500" /> Absolute Personal Records
-                </h2>
+                <div className="mb-6 flex items-center justify-between">
+                    <h2 className="flex items-center gap-2 text-xl font-bold text-white">
+                        <Trophy className="text-yellow-500" /> Absolute Personal Records
+                    </h2>
+                    {!isCalculating && prs.length > 0 && (
+                        <span className="flex items-center gap-1 rounded bg-emerald-900/30 px-2 py-1 font-bold tracking-wider text-[10px] text-emerald-500 uppercase">
+                            <Database className="h-3 w-3" /> Data Synchronized
+                        </span>
+                    )}
+                </div>
 
-                {isLoadingPrs ? (
-                    <div className="flex flex-col items-center justify-center py-8 text-gray-500">
-                        <Loader2 className="mb-2 h-8 w-8 animate-spin text-blue-500" />
-                        <p className="text-sm">Calculating absolute records...</p>
+                {isCalculating ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+                        <Loader2 className="mb-4 h-8 w-8 animate-spin text-blue-500" />
+                        <p className="mb-2 text-sm font-bold tracking-wider uppercase">Analyzing Big Data Set</p>
+                        <p className="text-xs text-gray-500">Calculating your absolute records...</p>
                     </div>
-                ) : recordsToDisplay.length === 0 ? (
-                    <p className="text-sm text-gray-500 italic">No records found yet. Import your data above.</p>
+                ) : prs.length === 0 ? (
+                    <p className="text-sm text-gray-500 italic">No records found. Import data above.</p>
                 ) : (
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        {recordsToDisplay.map((pr, i) => (
+                    <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+                        {prs.map((pr, i) => (
                             <div key={i} className="flex flex-col rounded-lg border border-gray-800 bg-gray-950 p-4 transition hover:border-emerald-900/50">
                                 <span className="mb-1 text-xs font-bold tracking-wider text-gray-500 uppercase">{pr.type}</span>
-                                <div className="flex items-end justify-between">
-                                    <span className="text-2xl font-black text-emerald-400">{pr.time}s</span>
-                                    <span className="rounded bg-gray-900 px-2 py-1 font-mono text-xs text-gray-500">{pr.date}</span>
-                                </div>
+                                <span className="mb-2 text-3xl leading-none font-black text-white">{pr.time}s</span>
+                                <span className="self-start rounded bg-gray-900 px-1.5 py-0.5 font-mono text-[10px] text-gray-500">{pr.date}</span>
                             </div>
                         ))}
                     </div>
                 )}
             </div>
 
-            {/* ZONA DE PELIGRO (FACTORY RESET) */}
-            <div className="mt-8 rounded-xl border border-red-900/50 bg-red-950/20 p-6 shadow-xl">
-                <h2 className="mb-4 flex items-center gap-2 text-xl font-bold text-red-500">
-                    <AlertTriangle className="text-red-500" /> Danger Zone
+            <div className="mt-8 rounded-xl border border-red-900/30 bg-red-950/10 p-6 shadow-xl">
+                <h2 className="mb-4 flex items-center gap-2 text-sm font-bold text-red-500/80 uppercase">
+                    <AlertTriangle className="h-4 w-4" /> Danger Zone
                 </h2>
-                <p className="mb-4 text-xs text-gray-400">
-                    Need a fresh start? This will permanently wipe your entire database (all solves and case progress).
-                </p>
-                <button
-                    onClick={handleFactoryReset}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-700 bg-red-900/80 px-4 py-2 font-bold text-white transition hover:bg-red-600 md:w-auto"
-                >
-                    <Trash2 className="h-4 w-4" /> Nuke Database (Factory Reset)
-                </button>
+                <div className="flex flex-col gap-4 sm:flex-row">
+                    <button
+                        onClick={handleClearSolves}
+                        className="flex flex-1 items-center justify-center gap-2 rounded border border-red-800 bg-red-900/50 px-4 py-3 text-xs font-bold text-white transition hover:bg-red-600"
+                    >
+                        <Trash2 className="h-4 w-4" /> Clear All Solves
+                    </button>
+                    <button
+                        onClick={handleClearCases}
+                        className="flex flex-1 items-center justify-center gap-2 rounded border border-orange-800 bg-orange-900/50 px-4 py-3 text-xs font-bold text-white transition hover:bg-orange-600"
+                    >
+                        <Trash2 className="h-4 w-4" /> Reset Case Progress
+                    </button>
+                </div>
             </div>
         </div>
     );

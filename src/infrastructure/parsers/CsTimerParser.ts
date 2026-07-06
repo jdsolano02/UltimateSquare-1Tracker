@@ -2,45 +2,52 @@
 import type { Solve } from "../../domain/entities/Solve";
 
 export const parseCsTimerExport = (
-  csvString: string,
-  blockType: "Sprint" | "Resistencia",
+    csvString: string,
+    blockType: "Speedsolving" | "Case recognition",
 ): Solve[] => {
-  const results = Papa.parse(csvString, {
-    header: true,
-    skipEmptyLines: true,
-    delimiter: ";",
-  });
-  const data = results.data as Record<string, string>[];
+    let dataString = csvString.trim();
 
-  return data.map((row) => {
-    const comment = row.Comment || "";
-    const upperComment = comment.toUpperCase();
-    const oblMatch = comment.match(/OBL\s+([^;,]+)/i);
+    // FIX CRÍTICO: Si el texto empieza con un número y punto y coma (ej. "2396;13.42"), 
+    // significa que falta la cabecera oficial. Se la inyectamos para que PapaParse funcione.
+    if (/^\d+;/.test(dataString)) {
+        dataString = "No.;Time;Comment;Scramble;Date\n" + dataString;
+    }
 
-    const dateObj = row.Date ? new Date(row.Date) : new Date();
-    const dateStr = dateObj.toISOString().split("T")[0];
+    const results = Papa.parse(dataString, {
+        header: true,
+        skipEmptyLines: true,
+        delimiter: ";",
+    });
+    const data = results.data as Record<string, string>[];
 
-    const rawTime = row["Time"] || "0";
-    const isDnf = rawTime.includes("DNF");
-    const isPlusTwo = rawTime.includes("+");
+    return data.map((row) => {
+        const comment = row.Comment || "";
+        const upperComment = comment.toUpperCase();
+        const oblMatch = comment.match(/OBL\s+([^;,]+)/i);
 
-    // Fix 0.00s bug: limpia cualquier caracter que no sea n�mero o punto antes de hacer parseFloat
-    const cleanTimeStr = rawTime.replace(/[^\d.]/g, "");
-    const parsedTime = parseFloat(cleanTimeStr);
-    const timeValue = isNaN(parsedTime) ? 0 : parsedTime;
+        const dateObj = row.Date ? new Date(row.Date) : new Date();
+        const dateStr = dateObj.toISOString().split("T")[0];
 
-    return {
-      date: dateObj,
-      dateStr: dateStr,
-      time: timeValue,
-      scramble: row.Scramble || "",
-      comment: comment,
-      block: blockType,
-      oblCase: oblMatch ? oblMatch[1].trim() : undefined,
-      isCsp: upperComment.includes("CSP"),
-      isObl: upperComment.includes("OBL"),
-      isDnf: isDnf,
-      isPlusTwo: isPlusTwo,
-    };
-  });
+        const rawTime = row["Time"] || "0";
+        const isDnf = rawTime.includes("DNF");
+        const isPlusTwo = rawTime.includes("+");
+
+        const cleanTimeStr = rawTime.replace(/[^\d.]/g, "");
+        const parsedTime = parseFloat(cleanTimeStr);
+        const timeValue = isNaN(parsedTime) ? 0 : parsedTime;
+
+        return {
+            date: dateObj,
+            dateStr: dateStr,
+            time: timeValue,
+            scramble: row.Scramble || "",
+            comment: comment,
+            block: blockType,
+            oblCase: oblMatch ? oblMatch[1].trim() : undefined,
+            isCsp: upperComment.includes("CSP"),
+            isObl: upperComment.includes("OBL"),
+            isDnf: isDnf,
+            isPlusTwo: isPlusTwo,
+        };
+    });
 };
