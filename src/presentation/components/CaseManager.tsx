@@ -1,0 +1,198 @@
+﻿import React, { useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db, type CaseStatus } from '../../infrastructure/database/db';
+import { OBL_BY_SLICES, OBL_BY_PRIORITY, CSP_CASES, EP_CASES } from '../../domain/constants/cases';
+import { CheckCircle2, Target, BookOpen, Layers } from 'lucide-react';
+
+interface CaseManagerProps {
+    category: 'OBL' | 'CSP' | 'EP';
+}
+
+// 1. Definimos las interfaces estrictas para eliminar los 'any'
+interface CaseItem {
+    name: string;
+    prob?: number;
+}
+
+interface CaseGroup {
+    title: string;
+    items: CaseItem[];
+}
+
+export const CaseManager: React.FC<CaseManagerProps> = ({ category }) => {
+    // Estado para la vista de OBL
+    const [oblView, setOblView] = useState<'slices' | 'priority'>('slices');
+
+    // Carga todos los casos guardados de esta categoría
+    const savedCases = useLiveQuery(
+        () => db.cases.where('category').equals(category).toArray(),
+        [category]
+    ) || [];
+
+    // Mapa de acceso rápido para los estados
+    const caseMap = new Map(savedCases.map(c => [c.caseName, c]));
+
+    // --- LÓGICA DE PROGRESO ---
+    let totalCases = 0;
+
+    // 2. Aplicamos la interfaz CaseGroup[] en lugar de any[]
+    let groups: CaseGroup[] = [];
+
+    if (category === 'OBL') {
+        const source = oblView === 'slices' ? OBL_BY_SLICES : OBL_BY_PRIORITY;
+        groups = source.map(g => ({
+            title: 'category' in g ? g.category : g.title,
+            items: g.cases.map(name => ({ name }))
+        }));
+        totalCases = groups.reduce((acc, g) => acc + g.items.length, 0);
+    } else if (category === 'EP') {
+        groups = EP_CASES.map(g => ({
+            title: g.category,
+            items: g.cases.map(name => ({ name }))
+        }));
+        totalCases = groups.reduce((acc, g) => acc + g.items.length, 0);
+    } else if (category === 'CSP') {
+        groups = [{
+            title: 'All CSP Cases',
+            items: CSP_CASES.map(c => ({ name: c.name, prob: c.prob }))
+        }];
+        totalCases = CSP_CASES.length;
+    }
+
+    const learnedCount = savedCases.length;
+    const progressPercent = totalCases === 0 ? 0 : Math.round((learnedCount / totalCases) * 100);
+
+    // --- MANEJADORES DE BASE DE DATOS ---
+    const handleStatusChange = async (caseName: string, newStatus: string) => {
+        const id = `${category}-${caseName}`;
+        if (newStatus === 'Unlearned') {
+            await db.cases.delete(id);
+        } else {
+            const existing = caseMap.get(caseName);
+            await db.cases.put({
+                id,
+                category,
+                caseName,
+                status: newStatus as CaseStatus,
+                isGoodAlg: existing?.isGoodAlg
+            });
+        }
+    };
+
+    const handleAlgTypeChange = async (caseName: string, isGoodAlg: boolean) => {
+        const id = `${category}-${caseName}`;
+        const existing = caseMap.get(caseName);
+        const status = existing ? existing.status : 'Learning'; // Default si apenas lo marca
+
+        await db.cases.put({
+            id,
+            category,
+            caseName,
+            status,
+            isGoodAlg
+        });
+    };
+
+    return (
+        <div className="flex h-[calc(100vh-8rem)] flex-col overflow-hidden rounded-xl border border-gray-800 bg-gray-900 p-6">
+
+            {/* HEADER: Progreso y Controles */}
+            <div className="mb-6 shrink-0 space-y-4">
+                <div className="flex items-center justify-between">
+                    <h2 className="flex items-center gap-2 text-2xl font-black text-white">
+                        {category === 'OBL' && <BookOpen className="text-blue-500" />}
+                        {category === 'CSP' && <Target className="text-purple-500" />}
+                        {category === 'EP' && <Layers className="text-amber-500" />}
+                        {category} Training Matrix
+                    </h2>
+
+                    {category === 'OBL' && (
+                        <div className="flex rounded-lg border border-gray-800 bg-gray-950 p-1">
+                            <button onClick={() => setOblView('slices')} className={`px-3 py-1 text-xs font-bold rounded-md transition ${oblView === 'slices' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-white'}`}>By Slices</button>
+                            <button onClick={() => setOblView('priority')} className={`px-3 py-1 text-xs font-bold rounded-md transition ${oblView === 'priority' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-white'}`}>By Priority</button>
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-950 p-4">
+                    <div>
+                        <p className="text-xs font-bold tracking-wider text-gray-500 uppercase">Completion</p>
+                        <p className="text-2xl font-black text-white">{learnedCount} <span className="text-lg text-gray-600">/ {totalCases}</span></p>
+                    </div>
+                    <div className="w-1/2">
+                        <div className="mb-1 flex justify-between text-xs font-bold">
+                            <span className="text-emerald-500">Progress</span>
+                            <span className="text-white">{progressPercent}%</span>
+                        </div>
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-gray-800">
+                            <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${progressPercent}%` }} />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* BODY: Lista de Casos Scrollable */}
+            <div className="custom-scrollbar flex-1 space-y-8 overflow-y-auto pr-2">
+                {groups.map((group, groupIdx) => (
+                    <div key={groupIdx} className="space-y-3">
+                        <h3 className="sticky top-0 z-10 border-b border-gray-800 bg-gray-900 pb-2 text-sm font-bold text-gray-400">
+                            {group.title}
+                        </h3>
+
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
+                            {/* 3. Aplicamos la interfaz CaseItem en lugar de any */}
+                            {group.items.map((item: CaseItem, itemIdx: number) => {
+                                const savedData = caseMap.get(item.name);
+                                const currentStatus = savedData?.status || 'Unlearned';
+                                const isGoodAlg = savedData?.isGoodAlg;
+
+                                return (
+                                    <div key={itemIdx} className={`p-3 rounded-lg border transition-all ${currentStatus !== 'Unlearned' ? 'bg-gray-800 border-gray-700' : 'bg-gray-950 border-gray-800/50 opacity-70 hover:opacity-100'}`}>
+                                        <div className="mb-2 flex items-start justify-between">
+                                            <span className={`text-sm font-bold ${currentStatus === 'Mastered' ? 'text-emerald-400' : 'text-gray-200'}`}>
+                                                {item.name}
+                                            </span>
+                                            {item.prob && (
+                                                <span className="rounded border border-purple-800/50 bg-purple-900/30 px-1.5 py-0.5 text-[10px] text-purple-400">
+                                                    {item.prob}%
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="flex flex-col gap-2">
+                                            <select
+                                                value={currentStatus}
+                                                onChange={(e) => handleStatusChange(item.name, e.target.value)}
+                                                className="w-full bg-black border border-gray-700 rounded p-1.5 text-xs text-white focus:border-blue-500 outline-none"
+                                            >
+                                                <option value="Unlearned">Not Learned</option>
+                                                <option value="Learning">Learning</option>
+                                                <option value="Drill">Drill</option>
+                                                <option value="Mastered">Mastered ✓</option>
+                                            </select>
+
+                                            {/* Controles exclusivos para CSP */}
+                                            {category === 'CSP' && (
+                                                <div className="mt-1 flex gap-2">
+                                                    <label className={`flex-1 flex items-center justify-center gap-1 text-[10px] py-1 border rounded cursor-pointer transition ${isGoodAlg === true ? 'bg-emerald-900/40 border-emerald-500 text-emerald-400' : 'bg-black border-gray-700 text-gray-500'}`}>
+                                                        <input type="radio" name={`alg-${item.name}`} className="hidden" checked={isGoodAlg === true} onChange={() => handleAlgTypeChange(item.name, true)} />
+                                                        <CheckCircle2 className="h-3 w-3" /> Good Alg
+                                                    </label>
+                                                    <label className={`flex-1 flex items-center justify-center gap-1 text-[10px] py-1 border rounded cursor-pointer transition ${isGoodAlg === false ? 'bg-red-900/40 border-red-500 text-red-400' : 'bg-black border-gray-700 text-gray-500'}`}>
+                                                        <input type="radio" name={`alg-${item.name}`} className="hidden" checked={isGoodAlg === false} onChange={() => handleAlgTypeChange(item.name, false)} />
+                                                        Bad Alg
+                                                    </label>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+        </div>
+    );
+};

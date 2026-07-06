@@ -1,127 +1,195 @@
 ﻿import { useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from './infrastructure/database/db';
 import { useSessionMetrics } from './presentation/hooks/useSessionMetrics';
 import { ImportForm } from './presentation/components/ImportForm';
-import { DailyTracker } from './presentation/components/DailyTracker';
-import { getCaseAudit, getFrequencyDistribution } from './application/useCases/stats';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, BarChart, Bar } from 'recharts';
-import { ShieldAlert, CalendarDays, Globe } from 'lucide-react';
+import { DailyHistoryView } from './presentation/components/DailyHistoryView';
+import { CaseManager } from './presentation/components/CaseManager';
+import { HistoricalRecords } from './presentation/components/HistoricalRecords';
+import { DashboardView } from './presentation/components/DashboardView';
+import { getCaseAudit } from './application/useCases/stats';
+import { OBL_BY_PRIORITY, CSP_CASES, EP_CASES } from './domain/constants/cases';
+import { LayoutDashboard, CalendarClock, Target, Database, History, BookOpenText, ShieldAlert, BarChart3 } from 'lucide-react';
+
+// --- COMPONENTES REUTILIZABLES (Definidos FUERA del render principal) ---
+const ProgressBar = ({ label, current, total, color, bg }: { label: string, current: number, total: number, color: string, bg: string }) => {
+    const pct = total === 0 ? 0 : Math.round((current / total) * 100);
+    return (
+        <div className="mb-4 last:mb-0">
+            <div className="mb-1 flex justify-between text-xs font-bold">
+                <span className="text-gray-400">{label}</span>
+                <span className="text-white">{current} / {total} <span className={color}>({pct}%)</span></span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-gray-800">
+                <div className={`h-full ${bg} transition-all duration-500`} style={{ width: `${pct}%` }} />
+            </div>
+        </div>
+    );
+};
 
 export default function App() {
-    const [viewMode, setViewMode] = useState<'Global' | 'Diario'>('Diario');
-    const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
-    const metrics = useSessionMetrics(viewMode, selectedDate);
+    // Nav State
+    const [viewMode, setViewMode] = useState<'Dashboard' | 'Daily' | 'CSP' | 'OBL' | 'EP' | 'Historical'>('Dashboard');
+    const [selectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
-    if (!metrics) {
-        return <div className="flex min-h-screen items-center justify-center bg-gray-950 text-gray-400">Cargando base de datos biométrica...</div>;
-    }
+    // Fetch Global Metrics & Audit
+    const sessionData = useSessionMetrics('Global', selectedDate);
+    const solves = sessionData?.solves || [];
+    const metrics = sessionData?.metrics || null;
+    const caseAudit = getCaseAudit(solves);
 
-    const caseAudit = getCaseAudit(metrics.solves);
-    const frequencyData = getFrequencyDistribution(metrics.solves);
+    // Fetch Case Progress
+    const savedCases = useLiveQuery(() => db.cases.toArray()) || [];
+    const cspLearned = savedCases.filter(c => c.category === 'CSP').length;
+    const oblLearned = savedCases.filter(c => c.category === 'OBL').length;
+    const epLearned = savedCases.filter(c => c.category === 'EP').length;
+
+    const totalCSP = CSP_CASES.length; // 88
+    const totalOBL = OBL_BY_PRIORITY.reduce((acc, g) => acc + g.cases.length, 0); // 71
+    const totalEP = EP_CASES.reduce((acc, g) => acc + g.cases.length, 0); // 33
+
+    const navItems = [
+        { id: 'Dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'Daily', label: 'Daily History', icon: CalendarClock },
+        { id: 'CSP', label: 'CSP Lab', icon: Target },
+        { id: 'OBL', label: 'OBL Lab', icon: BookOpenText },
+        { id: 'EP', label: 'EP Lab', icon: Database },
+        { id: 'Historical', label: 'Historical Records', icon: History },
+    ] as const;
 
     return (
-        <div className="min-h-screen bg-gray-950 p-4 text-gray-100 md:p-8">
-            {/* HEADER Y FILTROS GLOBALES */}
-            <header className="mx-auto mb-8 flex max-w-7xl flex-col justify-between gap-4 border-b border-gray-800 pb-6 md:flex-row md:items-end">
-                <div>
-                    <h1 className="flex items-center gap-2 text-3xl font-black tracking-tight text-white">
-                        SQUARE-1 <span className="rounded border border-emerald-800 bg-emerald-950/50 px-2 py-0.5 text-xl font-medium text-emerald-500">CORE ENGINE</span>
+        <div className="min-h-screen bg-gray-950 font-sans text-gray-100 selection:bg-blue-500/30">
+            {/* Navigation Header */}
+            <header className="sticky top-0 z-20 border-b border-gray-800 bg-gray-950/80 backdrop-blur-md">
+                <div className="mx-auto flex max-w-7xl items-center justify-between p-4">
+                    <h1 className="text-xl font-black tracking-tight text-white">
+                        SQ-1 <span className="text-emerald-500">CORE ENGINE</span>
                     </h1>
-                </div>
-                <div className="flex items-center gap-2 rounded-xl border border-gray-800 bg-gray-900 p-2">
-                    <button onClick={() => setViewMode('Global')} className={`px-4 py-2 text-xs font-bold rounded-lg flex items-center gap-2 ${viewMode === 'Global' ? 'bg-blue-600 text-white' : 'text-gray-400'}`}><Globe className="h-4 w-4" /> GLOBAL (Todo)</button>
-                    <button onClick={() => setViewMode('Diario')} className={`px-4 py-2 text-xs font-bold rounded-lg flex items-center gap-2 ${viewMode === 'Diario' ? 'bg-blue-600 text-white' : 'text-gray-400'}`}><CalendarDays className="h-4 w-4" /> POR DÍA</button>
-                    {viewMode === 'Diario' && (
-                        <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="bg-gray-950 text-gray-300 border border-gray-700 rounded p-1.5 text-xs focus:ring-blue-500 ml-2" />
-                    )}
+                    <nav className="custom-scrollbar flex gap-1 overflow-x-auto pb-1 md:pb-0">
+                        {navItems.map((item) => (
+                            <button
+                                key={item.id}
+                                onClick={() => setViewMode(item.id)}
+                                className={`flex whitespace-nowrap items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition ${viewMode === item.id
+                                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
+                                        : 'text-gray-400 hover:bg-gray-900 hover:text-gray-200'
+                                    }`}
+                            >
+                                <item.icon className="h-4 w-4" />
+                                <span className="hidden sm:inline">{item.label}</span>
+                            </button>
+                        ))}
+                    </nav>
                 </div>
             </header>
 
-            <main className="mx-auto grid max-w-7xl grid-cols-1 gap-8 lg:grid-cols-3">
+            {/* Main Content Area */}
+            <main className="mx-auto max-w-7xl p-4 md:p-8">
 
-                {/* COLUMNA IZQUIERDA: Formularios e Ingesta */}
-                <div className="space-y-6 lg:col-span-1">
-                    {viewMode === 'Diario' && <DailyTracker selectedDate={selectedDate} />}
-                    <ImportForm />
-                </div>
+                {viewMode === 'Dashboard' && (
+                    <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
 
-                {/* COLUMNA DERECHA: Estadísticas y Auditorías */}
-                <div className="space-y-6 lg:col-span-2">
+                        {/* LEFT COLUMN: Data Ingestion & Progress */}
+                        <div className="space-y-8 lg:col-span-1">
+                            <ImportForm />
 
-                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                        {/* PANEL WCA STANDARD */}
-                        {metrics.metrics ? (
-                            <div className="flex-1 rounded-xl border border-gray-800 bg-gray-900 p-6">
-                                <h3 className="mb-4 text-sm font-bold tracking-wider text-gray-400 uppercase">Métricas WCA ({metrics.metrics.totalSolves} solves)</h3>
-                                <div className="space-y-2">
-                                    <div className="mb-2 grid grid-cols-3 gap-2 border-b border-gray-800 pb-1 font-mono text-xs font-bold text-gray-500 uppercase">
-                                        <span>Cat.</span><span>Curr.</span><span>Best</span>
-                                    </div>
-                                    {[
-                                        { label: 'single', current: '-', best: metrics.metrics.single.best },
-                                        { label: 'mo3', data: metrics.metrics.mo3 },
-                                        { label: 'ao5', data: metrics.metrics.ao5 },
-                                        { label: 'ao12', data: metrics.metrics.ao12 },
-                                        { label: 'ao100', data: metrics.metrics.ao100 }
-                                    ].map(row => (
-                                        <div key={row.label} className="grid grid-cols-3 items-center gap-2 font-mono text-sm">
-                                            <span className="text-gray-400">{row.label}</span>
-                                            {row.data ? (
-                                                <>
-                                                    <span className="font-semibold text-white">{row.data.current} <span className="ml-1 text-[10px] text-gray-600">({row.data.currentSigma})</span></span>
-                                                    <span className="font-semibold text-blue-400">{row.data.best} <span className="ml-1 text-[10px] text-gray-600">({row.data.bestSigma})</span></span>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <span className="font-semibold text-white">{row.current}</span>
-                                                    <span className="font-bold text-emerald-400">{row.best}</span>
-                                                </>
-                                            )}
+                            {/* Algorithm Progress Summary */}
+                            <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 shadow-xl">
+                                <h3 className="mb-5 flex items-center gap-2 text-sm font-bold tracking-wider text-gray-400 uppercase">
+                                    <BarChart3 className="h-4 w-4 text-emerald-500" />
+                                    Algorithm Mastery
+                                </h3>
+                                <ProgressBar label="CSP Progression" current={cspLearned} total={totalCSP} color="text-purple-400" bg="bg-purple-500" />
+                                <ProgressBar label="OBL Progression" current={oblLearned} total={totalOBL} color="text-blue-400" bg="bg-blue-500" />
+                                <ProgressBar label="EP Progression" current={epLearned} total={totalEP} color="text-amber-400" bg="bg-amber-500" />
+                            </div>
+                        </div>
+
+                        {/* RIGHT COLUMN: WCA Metrics, Audit, Charts & Totals */}
+                        <div className="space-y-8 lg:col-span-2">
+
+                            {/* Top Row: Metrics & Audit */}
+                            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+
+                                {/* WCA Metrics Panel */}
+                                <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 shadow-xl">
+                                    <h3 className="mb-4 text-sm font-bold tracking-wider text-gray-400 uppercase">
+                                        WCA Metrics <span className="ml-1 text-gray-600">({metrics?.totalSolves || 0} solves)</span>
+                                    </h3>
+
+                                    {metrics ? (
+                                        <div className="space-y-2 font-mono text-sm">
+                                            <div className="grid grid-cols-3 gap-2 border-b border-gray-800 pb-2 font-bold tracking-widest text-gray-500 text-[10px] uppercase">
+                                                <span>Category</span><span>Current</span><span>Best</span>
+                                            </div>
+                                            {[
+                                                { label: 'Single', data: { current: '-', best: metrics.single.best, currentSigma: '', bestSigma: '' } },
+                                                { label: 'Mo3', data: metrics.mo3 },
+                                                { label: 'Ao5', data: metrics.ao5 },
+                                                { label: 'Ao12', data: metrics.ao12 },
+                                                { label: 'Ao100', data: metrics.ao100 }
+                                            ].map(row => (
+                                                <div key={row.label} className="grid grid-cols-3 items-center gap-2 py-1">
+                                                    <span className="text-gray-400">{row.label}</span>
+                                                    {row.data ? (
+                                                        <>
+                                                            <span className="font-semibold text-white">
+                                                                {row.data.current} <span className="ml-1 text-[10px] text-gray-600">{row.data.currentSigma && `(${row.data.currentSigma})`}</span>
+                                                            </span>
+                                                            <span className="font-bold text-emerald-400">
+                                                                {row.data.best} <span className="ml-1 text-[10px] text-gray-600">{row.data.bestSigma && `(${row.data.bestSigma})`}</span>
+                                                            </span>
+                                                        </>
+                                                    ) : (
+                                                        <><span className="text-gray-600">-</span><span className="text-gray-600">-</span></>
+                                                    )}
+                                                </div>
+                                            ))}
+                                            <div className="mt-4 flex items-end justify-between border-t border-gray-800 pt-4">
+                                                <span className="text-xs font-bold tracking-wider text-gray-500 uppercase">Global Average</span>
+                                                <span className="text-xl font-black text-blue-400">{metrics.globalAvg.result}s</span>
+                                            </div>
                                         </div>
-                                    ))}
-                                    <div className="mt-4 border-t border-gray-800 pt-3 font-mono text-sm">
-                                        <span className="font-bold text-gray-400">Avg Global:</span> <span className="text-lg font-black text-purple-400">{metrics.metrics.globalAvg.result}</span>
+                                    ) : (
+                                        <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-gray-800 text-sm text-gray-600 italic">No session data available.</div>
+                                    )}
+                                </div>
+
+                                {/* Case Audit Panel */}
+                                <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 shadow-xl">
+                                    <h3 className="mb-4 flex items-center gap-2 text-sm font-bold tracking-wider text-gray-400 uppercase">
+                                        <ShieldAlert className="h-4 w-4 text-amber-500" /> Case Audit
+                                    </h3>
+                                    <div className="space-y-3">
+                                        <div className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-950 p-3.5 transition hover:border-blue-900/50">
+                                            <span className="font-mono text-xs font-bold text-blue-400">OBL Only ({caseAudit.totalOBL})</span>
+                                            <span className="text-base font-black text-white">{caseAudit.avgOBL}s</span>
+                                        </div>
+                                        <div className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-950 p-3.5 transition hover:border-purple-900/50">
+                                            <span className="font-mono text-xs font-bold text-purple-400">CSP Only ({caseAudit.totalCSP})</span>
+                                            <span className="text-base font-black text-white">{caseAudit.avgCSP}s</span>
+                                        </div>
+                                        <div className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-950 p-3.5 transition hover:border-amber-900/50">
+                                            <span className="font-mono text-xs font-bold text-amber-400">Combo OBL+CSP ({caseAudit.totalCombo})</span>
+                                            <span className="text-base font-black text-white">{caseAudit.avgCombo}s</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        ) : (
-                            <div className="flex items-center justify-center rounded-xl border border-gray-800 bg-gray-900 p-6 font-mono text-sm text-gray-600">Sin registros en este periodo.</div>
-                        )}
 
-                        {/* PANEL DE AUDITORÍA DE CASOS DINÁMICA */}
-                        <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
-                            <h3 className="mb-4 flex items-center gap-2 text-sm font-bold tracking-wider text-gray-400 uppercase">
-                                <ShieldAlert className="h-4 w-4 text-amber-500" /> Auditoría de Casos
-                            </h3>
-                            <div className="space-y-4">
-                                <div className="flex items-center justify-between rounded border border-gray-800 bg-gray-950 p-2.5">
-                                    <span className="font-mono text-xs font-bold text-blue-400">Solo OBL ({caseAudit.totalOBL})</span>
-                                    <span className="text-sm font-black text-white">{caseAudit.avgOBL}s</span>
-                                </div>
-                                <div className="flex items-center justify-between rounded border border-gray-800 bg-gray-950 p-2.5">
-                                    <span className="font-mono text-xs font-bold text-purple-400">Solo CSP ({caseAudit.totalCSP})</span>
-                                    <span className="text-sm font-black text-white">{caseAudit.avgCSP}s</span>
-                                </div>
-                                <div className="flex items-center justify-between rounded border border-gray-800 bg-gray-950 p-2.5">
-                                    <span className="font-mono text-xs font-bold text-amber-400">Combinado OBL+CSP ({caseAudit.totalCombo})</span>
-                                    <span className="text-sm font-black text-white">{caseAudit.avgCombo}s</span>
-                                </div>
-                            </div>
+                            {/* Charts and Sprint/Flow/Global Totals */}
+                            <DashboardView />
+
                         </div>
                     </div>
+                )}
 
-                    {/* Gráfico de Evolución y Distribución Gaussiana */}
-                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                        <div className="h-64 rounded-xl border border-gray-800 bg-gray-900 p-4">
-                            <h3 className="mb-2 text-xs font-bold text-gray-500 uppercase">Evolución</h3>
-                            <ResponsiveContainer width="100%" height="100%"><AreaChart data={metrics.solves}><XAxis dataKey="date" hide /><YAxis stroke="#374151" className="font-mono text-xs" /><Tooltip /><Area type="monotone" dataKey="time" stroke="#2563eb" fill="#1e3a8a" /></AreaChart></ResponsiveContainer>
-                        </div>
-                        <div className="h-64 rounded-xl border border-gray-800 bg-gray-900 p-4">
-                            <h3 className="mb-2 text-xs font-bold text-gray-500 uppercase">Distribución (Gauss)</h3>
-                            <ResponsiveContainer width="100%" height="100%"><BarChart data={frequencyData}><XAxis dataKey="range" stroke="#374151" className="font-mono text-[10px]" /><Tooltip /><Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer>
-                        </div>
-                    </div>
-
-                </div>
+                {/* Other Views Routing */}
+                {viewMode === 'Daily' && <DailyHistoryView />}
+                {viewMode === 'CSP' && <CaseManager category="CSP" />}
+                {viewMode === 'OBL' && <CaseManager category="OBL" />}
+                {viewMode === 'EP' && <CaseManager category="EP" />}
+                {viewMode === 'Historical' && <HistoricalRecords />}
             </main>
         </div>
     );

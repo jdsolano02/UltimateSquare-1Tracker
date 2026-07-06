@@ -17,6 +17,12 @@ export interface DailyLog {
     exercise: ExerciseType;
     mentalEnergy: number;
     notes: string;
+    labCases: Array<{
+        category: 'OBL' | 'CSP' | 'EP',
+        caseName: string,
+        state: CaseStatus,
+        notes: string
+    }>;
 }
 
 export class Sq1Database extends Dexie {
@@ -26,8 +32,8 @@ export class Sq1Database extends Dexie {
 
     constructor() {
         super('Sq1TrackerDB');
-        // Version 5 implements the new Case management and unique constraints
-        this.version(5).stores({
+        // Version 6: Integrates labCases and maintains unique constraints
+        this.version(6).stores({
             solves: '++id, dateStr, block, oblCase, time, [dateStr+scramble]',
             logs: 'dateStr',
             cases: 'id, category, status'
