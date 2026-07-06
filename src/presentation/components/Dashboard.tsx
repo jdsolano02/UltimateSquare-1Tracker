@@ -1,6 +1,6 @@
 ﻿// src/presentation/components/Dashboard.tsx
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../../Infrastructure/database/db';
+import { db } from '../../infrastructure/database/db';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 export const Dashboard = () => {
