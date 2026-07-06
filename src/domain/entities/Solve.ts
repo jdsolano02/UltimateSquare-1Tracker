@@ -1,5 +1,5 @@
 export interface Solve {
-    id?: string;
+    id?: number;
     date: Date;
     dateStr: string; // Para buscar por día rápidamente (YYYY-MM-DD)
     time: number;
