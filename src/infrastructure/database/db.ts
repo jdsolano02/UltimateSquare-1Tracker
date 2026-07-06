@@ -3,13 +3,16 @@ import type { Solve } from '../../domain/entities/Solve';
 
 export type CaseStatus = 'Learning' | 'Drill' | 'Mastered';
 export type ExerciseType = 'Lifting' | 'Cardio' | 'Other' | 'None';
+export type EvilnessType = 'Evil' | 'Nice' | 'Unrated'; // Nuevo tipo para CSP
 
 export interface CaseRecord {
     id: string; // e.g., 'OBL-copp/copp'
     category: 'OBL' | 'CSP' | 'EP';
     caseName: string;
     status: CaseStatus;
-    isGoodAlg?: boolean; // For CSP
+    isGoodAlg?: boolean;
+    isBadAlg?: boolean; // Nuevo: Soporte para Bad Alg independiente
+    evilness?: EvilnessType; // Nuevo: Evilness rating
 }
 
 export interface DailyLog {
@@ -32,8 +35,8 @@ export class Sq1Database extends Dexie {
 
     constructor() {
         super('Sq1TrackerDB');
-        // Version 6: Integrates labCases and maintains unique constraints
-        this.version(6).stores({
+        // Version 7: Adds isBadAlg and evilness to cases
+        this.version(7).stores({
             solves: '++id, dateStr, block, oblCase, time, [dateStr+scramble]',
             logs: 'dateStr',
             cases: 'id, category, status'

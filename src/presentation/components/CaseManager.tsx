@@ -1,14 +1,13 @@
 ﻿import React, { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, type CaseStatus } from '../../infrastructure/database/db';
+import { db, type CaseStatus, type EvilnessType } from '../../infrastructure/database/db';
 import { OBL_BY_SLICES, OBL_BY_PRIORITY, CSP_CASES, EP_CASES } from '../../domain/constants/cases';
-import { CheckCircle2, Target, BookOpen, Layers } from 'lucide-react';
+import { Target, BookOpen, Layers, Flame, Smile } from 'lucide-react';
 
 interface CaseManagerProps {
     category: 'OBL' | 'CSP' | 'EP';
 }
 
-// 1. Definimos las interfaces estrictas para eliminar los 'any'
 interface CaseItem {
     name: string;
     prob?: number;
@@ -20,22 +19,16 @@ interface CaseGroup {
 }
 
 export const CaseManager: React.FC<CaseManagerProps> = ({ category }) => {
-    // Estado para la vista de OBL
     const [oblView, setOblView] = useState<'slices' | 'priority'>('slices');
 
-    // Carga todos los casos guardados de esta categoría
     const savedCases = useLiveQuery(
         () => db.cases.where('category').equals(category).toArray(),
         [category]
     ) || [];
 
-    // Mapa de acceso rápido para los estados
     const caseMap = new Map(savedCases.map(c => [c.caseName, c]));
 
-    // --- LÓGICA DE PROGRESO ---
     let totalCases = 0;
-
-    // 2. Aplicamos la interfaz CaseGroup[] en lugar de any[]
     let groups: CaseGroup[] = [];
 
     if (category === 'OBL') {
@@ -62,41 +55,25 @@ export const CaseManager: React.FC<CaseManagerProps> = ({ category }) => {
     const learnedCount = savedCases.length;
     const progressPercent = totalCases === 0 ? 0 : Math.round((learnedCount / totalCases) * 100);
 
-    // --- MANEJADORES DE BASE DE DATOS ---
-    const handleStatusChange = async (caseName: string, newStatus: string) => {
+    // --- MANEJADORES DE DB ---
+    // Corregido: value ahora es estrictamente string o boolean en lugar de 'any'
+    const handleFieldChange = async (caseName: string, field: string, value: string | boolean) => {
         const id = `${category}-${caseName}`;
-        if (newStatus === 'Unlearned') {
+        const existing = caseMap.get(caseName) || { id, category, caseName, status: 'Learning' as CaseStatus };
+
+        if (field === 'status' && value === 'Unlearned') {
             await db.cases.delete(id);
-        } else {
-            const existing = caseMap.get(caseName);
-            await db.cases.put({
-                id,
-                category,
-                caseName,
-                status: newStatus as CaseStatus,
-                isGoodAlg: existing?.isGoodAlg
-            });
+            return;
         }
-    };
 
-    const handleAlgTypeChange = async (caseName: string, isGoodAlg: boolean) => {
-        const id = `${category}-${caseName}`;
-        const existing = caseMap.get(caseName);
-        const status = existing ? existing.status : 'Learning'; // Default si apenas lo marca
-
-        await db.cases.put({
-            id,
-            category,
-            caseName,
-            status,
-            isGoodAlg
-        });
+        const updatedData = { ...existing, [field]: value };
+        await db.cases.put(updatedData);
     };
 
     return (
         <div className="flex h-[calc(100vh-8rem)] flex-col overflow-hidden rounded-xl border border-gray-800 bg-gray-900 p-6">
 
-            {/* HEADER: Progreso y Controles */}
+            {/* HEADER */}
             <div className="mb-6 shrink-0 space-y-4">
                 <div className="flex items-center justify-between">
                     <h2 className="flex items-center gap-2 text-2xl font-black text-white">
@@ -131,7 +108,7 @@ export const CaseManager: React.FC<CaseManagerProps> = ({ category }) => {
                 </div>
             </div>
 
-            {/* BODY: Lista de Casos Scrollable */}
+            {/* BODY (Scrollable) */}
             <div className="custom-scrollbar flex-1 space-y-8 overflow-y-auto pr-2">
                 {groups.map((group, groupIdx) => (
                     <div key={groupIdx} className="space-y-3">
@@ -140,11 +117,14 @@ export const CaseManager: React.FC<CaseManagerProps> = ({ category }) => {
                         </h3>
 
                         <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
-                            {/* 3. Aplicamos la interfaz CaseItem en lugar de any */}
                             {group.items.map((item: CaseItem, itemIdx: number) => {
                                 const savedData = caseMap.get(item.name);
                                 const currentStatus = savedData?.status || 'Unlearned';
-                                const isGoodAlg = savedData?.isGoodAlg;
+
+                                // Campos CSP
+                                const isGoodAlg = savedData?.isGoodAlg || false;
+                                const isBadAlg = savedData?.isBadAlg || false;
+                                const evilness: EvilnessType = savedData?.evilness || 'Unrated';
 
                                 return (
                                     <div key={itemIdx} className={`p-3 rounded-lg border transition-all ${currentStatus !== 'Unlearned' ? 'bg-gray-800 border-gray-700' : 'bg-gray-950 border-gray-800/50 opacity-70 hover:opacity-100'}`}>
@@ -162,7 +142,7 @@ export const CaseManager: React.FC<CaseManagerProps> = ({ category }) => {
                                         <div className="flex flex-col gap-2">
                                             <select
                                                 value={currentStatus}
-                                                onChange={(e) => handleStatusChange(item.name, e.target.value)}
+                                                onChange={(e) => handleFieldChange(item.name, 'status', e.target.value)}
                                                 className="w-full bg-black border border-gray-700 rounded p-1.5 text-xs text-white focus:border-blue-500 outline-none"
                                             >
                                                 <option value="Unlearned">Not Learned</option>
@@ -171,17 +151,37 @@ export const CaseManager: React.FC<CaseManagerProps> = ({ category }) => {
                                                 <option value="Mastered">Mastered ✓</option>
                                             </select>
 
-                                            {/* Controles exclusivos para CSP */}
+                                            {/* Controles Exclusivos CSP */}
                                             {category === 'CSP' && (
-                                                <div className="mt-1 flex gap-2">
-                                                    <label className={`flex-1 flex items-center justify-center gap-1 text-[10px] py-1 border rounded cursor-pointer transition ${isGoodAlg === true ? 'bg-emerald-900/40 border-emerald-500 text-emerald-400' : 'bg-black border-gray-700 text-gray-500'}`}>
-                                                        <input type="radio" name={`alg-${item.name}`} className="hidden" checked={isGoodAlg === true} onChange={() => handleAlgTypeChange(item.name, true)} />
-                                                        <CheckCircle2 className="h-3 w-3" /> Good Alg
-                                                    </label>
-                                                    <label className={`flex-1 flex items-center justify-center gap-1 text-[10px] py-1 border rounded cursor-pointer transition ${isGoodAlg === false ? 'bg-red-900/40 border-red-500 text-red-400' : 'bg-black border-gray-700 text-gray-500'}`}>
-                                                        <input type="radio" name={`alg-${item.name}`} className="hidden" checked={isGoodAlg === false} onChange={() => handleAlgTypeChange(item.name, false)} />
-                                                        Bad Alg
-                                                    </label>
+                                                <div className="mt-1 space-y-2 border-t border-gray-700 pt-2">
+                                                    {/* Checkboxes Independientes */}
+                                                    <div className="flex gap-2">
+                                                        <label className={`flex-1 flex items-center justify-center gap-1 text-[10px] py-1 border rounded cursor-pointer transition ${isGoodAlg ? 'bg-emerald-900/40 border-emerald-500 text-emerald-400' : 'bg-black border-gray-700 text-gray-500 hover:border-gray-500'}`}>
+                                                            <input type="checkbox" className="hidden" checked={isGoodAlg} onChange={(e) => handleFieldChange(item.name, 'isGoodAlg', e.target.checked)} />
+                                                            Good Alg
+                                                        </label>
+                                                        <label className={`flex-1 flex items-center justify-center gap-1 text-[10px] py-1 border rounded cursor-pointer transition ${isBadAlg ? 'bg-red-900/40 border-red-500 text-red-400' : 'bg-black border-gray-700 text-gray-500 hover:border-gray-500'}`}>
+                                                            <input type="checkbox" className="hidden" checked={isBadAlg} onChange={(e) => handleFieldChange(item.name, 'isBadAlg', e.target.checked)} />
+                                                            Bad Alg
+                                                        </label>
+                                                    </div>
+
+                                                    {/* Evilness Selector */}
+                                                    <div className="flex overflow-hidden rounded border border-gray-700 bg-black">
+                                                        <button
+                                                            onClick={() => handleFieldChange(item.name, 'evilness', evilness === 'Evil' ? 'Unrated' : 'Evil')}
+                                                            className={`flex-1 flex items-center justify-center gap-1 text-[10px] py-1 transition ${evilness === 'Evil' ? 'bg-orange-900/50 text-orange-500' : 'text-gray-500 hover:bg-gray-800'}`}
+                                                        >
+                                                            <Flame className="h-3 w-3" /> Evil
+                                                        </button>
+                                                        <div className="w-px bg-gray-700"></div>
+                                                        <button
+                                                            onClick={() => handleFieldChange(item.name, 'evilness', evilness === 'Nice' ? 'Unrated' : 'Nice')}
+                                                            className={`flex-1 flex items-center justify-center gap-1 text-[10px] py-1 transition ${evilness === 'Nice' ? 'bg-blue-900/50 text-blue-400' : 'text-gray-500 hover:bg-gray-800'}`}
+                                                        >
+                                                            <Smile className="h-3 w-3" /> Nice
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
@@ -192,7 +192,6 @@ export const CaseManager: React.FC<CaseManagerProps> = ({ category }) => {
                     </div>
                 ))}
             </div>
-
         </div>
     );
 };
