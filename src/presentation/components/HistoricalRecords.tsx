@@ -2,11 +2,11 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../infrastructure/database/db';
 import { parseCsTimerExport } from '../../infrastructure/parsers/CsTimerParser';
-import { Trophy, UploadCloud, CheckCircle, AlertTriangle, Trash2 } from 'lucide-react';
+import { Trophy, UploadCloud, CheckCircle, AlertTriangle, Trash2, Loader2 } from 'lucide-react';
 
 interface PRRecord {
     type: string;
-    time: number;
+    time: string;
     date: string;
 }
 
@@ -15,28 +15,83 @@ export const HistoricalRecords = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [status, setStatus] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
-    // Motor reactivo seguro: Usa el índice 'dateStr' que sí existe en la DB y evita crashes
+    const calculateAvg = (times: number[], size: number): number => {
+        if (times.length !== size) return Infinity;
+        const trim = size === 3 ? 0 : Math.ceil(size * 0.05);
+        const sorted = [...times].sort((a, b) => a - b);
+        const trimmed = sorted.slice(trim, size - trim);
+        const sum = trimmed.reduce((a, b) => a + b, 0);
+        return sum / trimmed.length;
+    };
+
+    // Dexie's useLiveQuery manejará el estado de carga (devuelve 'undefined' mientras procesa)
+    // y se actualizará automáticamente si db.solves cambia. ¡Adiós useEffect!
     const prs = useLiveQuery(async () => {
         try {
-            // orderBy('dateStr') es 100% seguro porque lo definimos en los índices de Dexie
-            const allSolves = await db.solves.orderBy('dateStr').toArray();
+            const allSolves = await db.solves.orderBy('date').toArray();
+            const validSolves = allSolves.filter(s => s.time > 0);
+
+            const categories = [
+                { label: 'Single', size: 1 },
+                { label: 'Mo3', size: 3 },
+                { label: 'Ao5', size: 5 },
+                { label: 'Ao12', size: 12 },
+                { label: 'Ao25', size: 25 },
+                { label: 'Ao50', size: 50 },
+                { label: 'Ao100', size: 100 },
+                { label: 'Ao500', size: 500 },
+                { label: 'Ao1000', size: 1000 },
+                { label: 'Ao2000', size: 2000 },
+                { label: 'Ao4000', size: 4000 },
+            ];
 
             const records: PRRecord[] = [];
-            let bestSingle = Infinity;
 
-            allSolves.forEach(solve => {
-                if (solve.time < bestSingle && solve.time > 0) {
-                    bestSingle = solve.time;
-                    records.push({ type: 'Single PR', time: solve.time, date: solve.dateStr });
+            for (const cat of categories) {
+                if (validSolves.length < cat.size) continue;
+
+                let best = Infinity;
+                let bestDateStr = '';
+
+                if (cat.size === 1) {
+                    for (const solve of validSolves) {
+                        if (solve.time < best) {
+                            best = solve.time;
+                            bestDateStr = solve.dateStr;
+                        }
+                    }
+                } else {
+                    const timesOnly = validSolves.map(s => s.time);
+                    for (let i = 0; i <= timesOnly.length - cat.size; i++) {
+                        const window = timesOnly.slice(i, i + cat.size);
+                        const currentAvg = calculateAvg(window, cat.size);
+
+                        if (currentAvg < best) {
+                            best = currentAvg;
+                            bestDateStr = validSolves[i + cat.size - 1].dateStr;
+                        }
+                    }
                 }
-            });
 
-            return records.reverse(); // Los más recientes arriba
+                if (best !== Infinity) {
+                    records.push({
+                        type: cat.label === 'Single' ? 'Single' : cat.label,
+                        time: best.toFixed(2),
+                        date: bestDateStr
+                    });
+                }
+            }
+
+            return records;
         } catch (error) {
-            console.error("Error loading records:", error);
-            return []; // Fallback seguro para evitar pantallas blancas
+            console.error("Error calculating PRs:", error);
+            return [];
         }
-    }, []) || [];
+    }, []);
+
+    // Variables derivadas para simplificar el renderizado
+    const isLoadingPrs = prs === undefined;
+    const recordsToDisplay = prs || [];
 
     const handleHistoricalImport = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -46,12 +101,9 @@ export const HistoricalRecords = () => {
 
         try {
             const parsedSolves = parseCsTimerExport(rawText, 'Resistencia');
-            if (parsedSolves.length === 0) {
-                throw new Error("No valid solves found in CSV.");
-            }
+            if (parsedSolves.length === 0) throw new Error("No valid solves found in CSV.");
 
             let addedCount = 0;
-
             for (const solve of parsedSolves) {
                 const isDuplicate = await db.solves
                     .where({ dateStr: solve.dateStr, scramble: solve.scramble })
@@ -65,6 +117,7 @@ export const HistoricalRecords = () => {
 
             setStatus({ message: `Historical Sync Complete: ${addedCount} new solves added.`, type: 'success' });
             setRawText('');
+            // Ya no hace falta recalcular manualmente, useLiveQuery lo detecta solo y refresca la pantalla.
 
         } catch (error) {
             console.error('Historical Import Error:', error);
@@ -75,14 +128,13 @@ export const HistoricalRecords = () => {
     };
 
     const handleFactoryReset = async () => {
-        const confirmed = window.confirm("WARNING: This will permanently delete ALL your solves, case progress, and daily logs. Are you absolutely sure?");
+        const confirmed = window.confirm("WARNING: This will permanently delete ALL your solves and case progress. Are you absolutely sure?");
         if (confirmed) {
             const doubleCheck = window.confirm("Are you REALLY sure? This action cannot be undone.");
             if (doubleCheck) {
                 try {
                     await db.solves.clear();
                     await db.cases.clear();
-                    await db.logs.clear();
                     alert("Database wiped successfully. Reloading...");
                     window.location.reload();
                 } catch (error) {
@@ -115,7 +167,7 @@ export const HistoricalRecords = () => {
                         disabled={!rawText.trim() || isProcessing}
                         className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-3 font-bold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                        {isProcessing ? 'Processing Data...' : 'Sync Historical Data'}
+                        {isProcessing ? <><Loader2 className="h-4 w-4 animate-spin" /> Processing Data...</> : 'Sync Historical Data'}
                     </button>
 
                     {status && (
@@ -126,21 +178,28 @@ export const HistoricalRecords = () => {
                 </form>
             </div>
 
-            {/* TABLA DE RECORDS */}
+            {/* TABLA DE RECORDS ABSOLUTOS */}
             <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 shadow-xl">
                 <h2 className="mb-4 flex items-center gap-2 text-xl font-bold text-white">
-                    <Trophy className="text-yellow-500" /> Personal Records Timeline
+                    <Trophy className="text-yellow-500" /> Absolute Personal Records
                 </h2>
 
-                {prs.length === 0 ? (
-                    <p className="text-sm text-gray-500 italic">No records found yet.</p>
+                {isLoadingPrs ? (
+                    <div className="flex flex-col items-center justify-center py-8 text-gray-500">
+                        <Loader2 className="mb-2 h-8 w-8 animate-spin text-blue-500" />
+                        <p className="text-sm">Calculating absolute records...</p>
+                    </div>
+                ) : recordsToDisplay.length === 0 ? (
+                    <p className="text-sm text-gray-500 italic">No records found yet. Import your data above.</p>
                 ) : (
-                    <div className="space-y-2">
-                        {prs.map((pr, i) => (
-                            <div key={i} className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-950 p-3">
-                                <span className="font-bold text-gray-300">{pr.type}</span>
-                                <span className="text-xl font-black text-emerald-400">{pr.time}s</span>
-                                <span className="text-sm text-gray-500">{pr.date}</span>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                        {recordsToDisplay.map((pr, i) => (
+                            <div key={i} className="flex flex-col rounded-lg border border-gray-800 bg-gray-950 p-4 transition hover:border-emerald-900/50">
+                                <span className="mb-1 text-xs font-bold tracking-wider text-gray-500 uppercase">{pr.type}</span>
+                                <div className="flex items-end justify-between">
+                                    <span className="text-2xl font-black text-emerald-400">{pr.time}s</span>
+                                    <span className="rounded bg-gray-900 px-2 py-1 font-mono text-xs text-gray-500">{pr.date}</span>
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -153,7 +212,7 @@ export const HistoricalRecords = () => {
                     <AlertTriangle className="text-red-500" /> Danger Zone
                 </h2>
                 <p className="mb-4 text-xs text-gray-400">
-                    Need a fresh start? This will permanently wipe your entire database (all solves, metrics, case progress, and daily logs). Make sure you have a backup of your CsTimer exports before proceeding.
+                    Need a fresh start? This will permanently wipe your entire database (all solves and case progress).
                 </p>
                 <button
                     onClick={handleFactoryReset}
