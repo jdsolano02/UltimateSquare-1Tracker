@@ -15,24 +15,27 @@ export const HistoricalRecords = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [status, setStatus] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
-    // Motor reactivo corregido: Trae los datos y los ordena en memoria para evitar errores de índice
+    // Motor reactivo seguro: Usa el índice 'dateStr' que sí existe en la DB y evita crashes
     const prs = useLiveQuery(async () => {
-        const allSolves = await db.solves.toArray();
+        try {
+            // orderBy('dateStr') es 100% seguro porque lo definimos en los índices de Dexie
+            const allSolves = await db.solves.orderBy('dateStr').toArray();
 
-        // Orden cronológico exacto usando el objeto Date
-        allSolves.sort((a, b) => a.date.getTime() - b.date.getTime());
+            const records: PRRecord[] = [];
+            let bestSingle = Infinity;
 
-        const records: PRRecord[] = [];
-        let bestSingle = Infinity;
+            allSolves.forEach(solve => {
+                if (solve.time < bestSingle && solve.time > 0) {
+                    bestSingle = solve.time;
+                    records.push({ type: 'Single PR', time: solve.time, date: solve.dateStr });
+                }
+            });
 
-        allSolves.forEach(solve => {
-            if (solve.time < bestSingle && solve.time > 0) {
-                bestSingle = solve.time;
-                records.push({ type: 'Single PR', time: solve.time, date: solve.dateStr });
-            }
-        });
-
-        return records.reverse(); // Los más recientes arriba
+            return records.reverse(); // Los más recientes arriba
+        } catch (error) {
+            console.error("Error loading records:", error);
+            return []; // Fallback seguro para evitar pantallas blancas
+        }
     }, []) || [];
 
     const handleHistoricalImport = async (e: React.FormEvent) => {
@@ -71,7 +74,6 @@ export const HistoricalRecords = () => {
         }
     };
 
-    // Función de Reseteo Total
     const handleFactoryReset = async () => {
         const confirmed = window.confirm("WARNING: This will permanently delete ALL your solves, case progress, and daily logs. Are you absolutely sure?");
         if (confirmed) {
@@ -82,7 +84,7 @@ export const HistoricalRecords = () => {
                     await db.cases.clear();
                     await db.logs.clear();
                     alert("Database wiped successfully. Reloading...");
-                    window.location.reload(); // Recarga la app para limpiar la memoria caché de React
+                    window.location.reload();
                 } catch (error) {
                     console.error("Error clearing database:", error);
                     alert("An error occurred while wiping the database.");
