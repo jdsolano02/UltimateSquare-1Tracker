@@ -1,75 +1,38 @@
-# React + TypeScript + Vite
+﻿# Square-1 Core Engine
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A high-performance, local-first analytical dashboard designed for competitive Square-1 speedcubers. Built with Clean Architecture principles, this engine processes session data, provides real-time WCA-compliant statistics, and tracks daily biométric performance to optimize training efficiency.
 
-Currently, two official plugins are available:
+## 🚀 Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **WCA-Compliant Analytics**: Real-time calculation of Mo3, Ao5, Ao12, and global averages using standard trimming rules (WCA 9f2).
+- **Daily Performance Tracker**: A specialized module to log biometric data (sleep quality, mental energy, physical fatigue) and correlate it with cubing performance.
+- **OBL/CSP Audit Engine**: Dynamic case tracking system to identify bottleneck patterns in OBL and CSP execution.
+- **Local-First Architecture**: Powered by `Dexie.js` and `IndexedDB` for zero-latency data persistence without the need for external cloud backends.
+- **Data Visualization**: Interactive performance charts using `Recharts` for Gaussian distribution and time-series progress tracking.
 
-## React Compiler
+## 🛠 Technical Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Frontend**: React, TypeScript, Vite
+- **Styling**: Tailwind CSS (v4)
+- **Database**: IndexedDB via Dexie.js
+- **Data Processing**: PapaParse (CSV integration)
+- **Mathematical Engine**: Custom TypeScript implementation of WCA standard deviations and sliding window averages.
 
-## Expanding the ESLint configuration
+## 📦 Getting Started
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+1. **Clone the repository**:
+   ```bash
+   git clone <your-repository-url>
+2. Install dependencies: npm install
+3. Run the development server: npm run dev
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+📐 Architecture
+The project follows the Clean Architecture pattern to ensure strict separation of concerns:
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+domain/: Business entities and interfaces.
+application/: Pure logic and use cases (statistical engine).
+infrastructure/: Data persistence (Dexie) and external parsers.
+presentation/: React components and custom hooks.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
-```
+📝 License
+This project is licensed under the MIT License.
