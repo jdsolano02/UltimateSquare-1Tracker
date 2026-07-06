@@ -1,8 +1,8 @@
-﻿import { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../infrastructure/database/db';
 import { parseCsTimerExport } from '../../infrastructure/parsers/CsTimerParser';
-import { Trophy, UploadCloud, CheckCircle } from 'lucide-react';
+import { Trophy, UploadCloud, CheckCircle, AlertTriangle, Trash2 } from 'lucide-react';
 
 interface PRRecord {
     type: string;
@@ -15,9 +15,13 @@ export const HistoricalRecords = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [status, setStatus] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
-    // Motor reactivo de Dexie: Reemplaza completamente a useEffect y previene los re-renders en cascada
+    // Motor reactivo corregido: Trae los datos y los ordena en memoria para evitar errores de índice
     const prs = useLiveQuery(async () => {
-        const allSolves = await db.solves.orderBy('date').toArray();
+        const allSolves = await db.solves.toArray();
+
+        // Orden cronológico exacto usando el objeto Date
+        allSolves.sort((a, b) => a.date.getTime() - b.date.getTime());
+
         const records: PRRecord[] = [];
         let bestSingle = Infinity;
 
@@ -27,7 +31,8 @@ export const HistoricalRecords = () => {
                 records.push({ type: 'Single PR', time: solve.time, date: solve.dateStr });
             }
         });
-        return records.reverse();
+
+        return records.reverse(); // Los más recientes arriba
     }, []) || [];
 
     const handleHistoricalImport = async (e: React.FormEvent) => {
@@ -60,9 +65,29 @@ export const HistoricalRecords = () => {
 
         } catch (error) {
             console.error('Historical Import Error:', error);
-            setStatus({ message: 'Error processing CSV data.', type: 'error' });
+            setStatus({ message: 'Error processing CSV data. Make sure it is a valid CsTimer export.', type: 'error' });
         } finally {
             setIsProcessing(false);
+        }
+    };
+
+    // Función de Reseteo Total
+    const handleFactoryReset = async () => {
+        const confirmed = window.confirm("WARNING: This will permanently delete ALL your solves, case progress, and daily logs. Are you absolutely sure?");
+        if (confirmed) {
+            const doubleCheck = window.confirm("Are you REALLY sure? This action cannot be undone.");
+            if (doubleCheck) {
+                try {
+                    await db.solves.clear();
+                    await db.cases.clear();
+                    await db.logs.clear();
+                    alert("Database wiped successfully. Reloading...");
+                    window.location.reload(); // Recarga la app para limpiar la memoria caché de React
+                } catch (error) {
+                    console.error("Error clearing database:", error);
+                    alert("An error occurred while wiping the database.");
+                }
+            }
         }
     };
 
@@ -118,6 +143,22 @@ export const HistoricalRecords = () => {
                         ))}
                     </div>
                 )}
+            </div>
+
+            {/* ZONA DE PELIGRO (FACTORY RESET) */}
+            <div className="mt-8 rounded-xl border border-red-900/50 bg-red-950/20 p-6 shadow-xl">
+                <h2 className="mb-4 flex items-center gap-2 text-xl font-bold text-red-500">
+                    <AlertTriangle className="text-red-500" /> Danger Zone
+                </h2>
+                <p className="mb-4 text-xs text-gray-400">
+                    Need a fresh start? This will permanently wipe your entire database (all solves, metrics, case progress, and daily logs). Make sure you have a backup of your CsTimer exports before proceeding.
+                </p>
+                <button
+                    onClick={handleFactoryReset}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-700 bg-red-900/80 px-4 py-2 font-bold text-white transition hover:bg-red-600 md:w-auto"
+                >
+                    <Trash2 className="h-4 w-4" /> Nuke Database (Factory Reset)
+                </button>
             </div>
         </div>
     );
