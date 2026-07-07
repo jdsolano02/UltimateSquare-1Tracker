@@ -1,10 +1,10 @@
-﻿import React, { useState } from 'react';
+﻿import { useState } from 'react';
 import { db } from '../../infrastructure/database/db';
 import { parseCsTimerExport } from '../../infrastructure/parsers/CsTimerParser';
 import { CheckCircle, Flame, Trophy, FileUp, Loader2 } from 'lucide-react';
 
 export const ImportForm = () => {
-    const [block, setBlock] = useState<'Speedsolving' | 'Case recognition'>('Speedsolving');
+    const [block, setBlock] = useState<string>('Global');
     const [status, setStatus] = useState<{ count: number; prs: string[] } | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [fileName, setFileName] = useState<string | null>(null);
@@ -21,7 +21,7 @@ export const ImportForm = () => {
         reader.onload = async (event) => {
             try {
                 const rawText = event.target?.result as string;
-                const parsedSolves = parseCsTimerExport(rawText, block);
+                const parsedSolves = parseCsTimerExport(rawText, block as unknown as 'Speedsolving');
 
                 if (parsedSolves.length === 0) {
                     setIsProcessing(false);
@@ -32,8 +32,8 @@ export const ImportForm = () => {
                 const newPrs: string[] = [];
 
                 const bestSolveArray = await db.solves.where('block').equals(block).sortBy('time');
-                const validSolves = bestSolveArray.filter(s => s.time > 0);
-                const absoluteBest = validSolves.length > 0 ? validSolves[0].time : Infinity;
+                const validSolves = bestSolveArray.filter(s => Number(s.time) > 0);
+                const absoluteBest = validSolves.length > 0 ? Number(validSolves[0].time) : Infinity;
                 let newBatchBest = Infinity;
 
                 for (const solve of parsedSolves) {
@@ -41,9 +41,9 @@ export const ImportForm = () => {
                         .where({ dateStr: solve.dateStr, scramble: solve.scramble })
                         .first();
 
-                    if (!isDuplicate && solve.time > 0) {
-                        if (solve.time < newBatchBest) {
-                            newBatchBest = solve.time;
+                    if (!isDuplicate && Number(solve.time) > 0) {
+                        if (Number(solve.time) < newBatchBest) {
+                            newBatchBest = Number(solve.time);
                         }
                         await db.solves.add(solve);
                         addedCount++;
@@ -51,7 +51,7 @@ export const ImportForm = () => {
                 }
 
                 if (newBatchBest < absoluteBest && newBatchBest !== Infinity) {
-                    newPrs.push(`New Absolute PR Single: ${newBatchBest}s! 🏆`);
+                    newPrs.push(`New Absolute PR Single: ${newBatchBest.toFixed(2)}s! 🏆`);
                 }
 
                 setStatus({ count: addedCount, prs: newPrs });
@@ -65,7 +65,6 @@ export const ImportForm = () => {
         };
 
         reader.readAsText(file);
-        // Reseteamos el input para permitir subir el mismo archivo dos veces si el usuario quiere
         e.target.value = '';
     };
 
@@ -80,7 +79,7 @@ export const ImportForm = () => {
                 <div>
                     <label className="mb-2 block text-sm font-medium text-gray-400">Block Type</label>
                     <div className="grid grid-cols-2 gap-2">
-                        <button type="button" onClick={() => setBlock('Speedsolving')} className={`p-3 text-sm font-semibold rounded-lg border transition ${block === 'Speedsolving' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-950 border-gray-800 text-gray-400 hover:bg-gray-800'}`}>Speedsolving</button>
+                        <button type="button" onClick={() => setBlock('Global')} className={`p-3 text-sm font-semibold rounded-lg border transition ${block === 'Global' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-950 border-gray-800 text-gray-400 hover:bg-gray-800'}`}>Global</button>
                         <button type="button" onClick={() => setBlock('Case recognition')} className={`p-3 text-sm font-semibold rounded-lg border transition ${block === 'Case recognition' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-950 border-gray-800 text-gray-400 hover:bg-gray-800'}`}>Case recognition</button>
                     </div>
                 </div>

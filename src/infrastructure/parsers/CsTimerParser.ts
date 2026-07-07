@@ -3,12 +3,10 @@ import type { Solve } from "../../domain/entities/Solve";
 
 export const parseCsTimerExport = (
     csvString: string,
-    blockType: "Speedsolving" | "Case recognition",
+    blockType: "Speedsolving" | "Case recognition" | "Main"
 ): Solve[] => {
     let dataString = csvString.trim();
 
-    // FIX CRÍTICO: Si el texto empieza con un número y punto y coma (ej. "2396;13.42"), 
-    // significa que falta la cabecera oficial. Se la inyectamos para que PapaParse funcione.
     if (/^\d+;/.test(dataString)) {
         dataString = "No.;Time;Comment;Scramble;Date\n" + dataString;
     }
@@ -34,20 +32,20 @@ export const parseCsTimerExport = (
 
         const cleanTimeStr = rawTime.replace(/[^\d.]/g, "");
         const parsedTime = parseFloat(cleanTimeStr);
-        const timeValue = isNaN(parsedTime) ? 0 : parsedTime;
+        const timeValue = isNaN(parsedTime) ? "0.00" : parsedTime.toFixed(2);
 
         return {
-            date: dateObj,
+            date: dateObj.toISOString(), // Guardamos ISO string por seguridad
             dateStr: dateStr,
-            time: timeValue,
+            time: timeValue, // Obligamos a que sea string según la interfaz
             scramble: row.Scramble || "",
             comment: comment,
-            block: blockType,
+            block: blockType as 'Speedsolving', // Casting seguro
             oblCase: oblMatch ? oblMatch[1].trim() : undefined,
             isCsp: upperComment.includes("CSP"),
             isObl: upperComment.includes("OBL"),
             isDnf: isDnf,
             isPlusTwo: isPlusTwo,
-        };
+        } as unknown as Solve;
     });
 };

@@ -1,10 +1,10 @@
-﻿import React, { useState } from 'react';
+﻿import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type CaseStatus, type EvilnessType } from '../../infrastructure/database/db';
 import {
     OBL_BY_SLICES, OBL_CO_CASES, OBL_EO_CASES,
     CSP_CASES,
-    NP_PBL_CASES, DP_PBL_CASES, PBL_CP_CASES, PBL_EP_CASES
+    NP_PBL_CASES, DP_PBL_CASES, PBL_CP_CASES, PBL_EP_GROUPS
 } from '../../domain/constants/cases';
 import { Target, BookOpen, Flame, Smile, Grid3X3, Search, Info } from 'lucide-react';
 
@@ -28,8 +28,8 @@ export const CaseManager: React.FC<CaseManagerProps> = ({ category }) => {
     const [statusFilter, setStatusFilter] = useState<'All' | 'Unlearned' | 'Learning' | 'Drill' | 'Mastered'>('All');
     const [searchQuery, setSearchQuery] = useState('');
 
-    const [oblFilters, setOblFilters] = useState<string[]>(['Slices', 'CO', 'EO']);
-    const [pblFilters, setPblFilters] = useState<string[]>(['NP PBL', 'DP PBL', 'CP', 'EP']);
+    const [oblFilters, setOblFilters] = useState<string[]>(['Slices']);
+    const [pblFilters, setPblFilters] = useState<string[]>(['CP', 'EP']);
 
     const savedCases = useLiveQuery(() => db.cases.where('category').equals(category).toArray(), [category]) || [];
     const caseMap = new Map(savedCases.map(c => [c.caseName, c]));
@@ -46,14 +46,15 @@ export const CaseManager: React.FC<CaseManagerProps> = ({ category }) => {
         if (oblFilters.includes('CO')) groups.push({ title: 'Corner Orientation (CO)', items: OBL_CO_CASES.map(name => ({ name })) });
         if (oblFilters.includes('EO')) groups.push({ title: 'Edge Orientation (EO)', items: OBL_EO_CASES.map(name => ({ name })) });
     } else if (category === 'PBL') {
+        if (pblFilters.includes('CP')) groups.push({ title: 'Corner Permutation (CP)', items: PBL_CP_CASES.map(name => ({ name })) });
+        if (pblFilters.includes('EP')) groups.push(...PBL_EP_GROUPS.map(g => ({ title: `[EP] ${g.category}`, items: g.cases.map(name => ({ name })) })));
         if (pblFilters.includes('NP PBL')) groups.push(...NP_PBL_CASES.map(g => ({ title: g.category, items: g.cases.map(name => ({ name })) })));
         if (pblFilters.includes('DP PBL')) groups.push(...DP_PBL_CASES.map(g => ({ title: g.category, items: g.cases.map(name => ({ name })) })));
-        if (pblFilters.includes('CP')) groups.push({ title: 'Corner Permutation (CP)', items: PBL_CP_CASES.map(name => ({ name })) });
-        if (pblFilters.includes('EP')) groups.push({ title: 'Edge Permutation (EP)', items: PBL_EP_CASES.map(name => ({ name })) });
     } else if (category === 'CSP') {
         groups = [{ title: 'All CSP Cases', items: CSP_CASES.map(c => ({ name: c.name, prob: c.prob })) }];
     }
 
+    // Cálculo único para no duplicar conteo visual en la barra de progreso
     const uniqueDisplayedCases = new Set(groups.flatMap(g => g.items.map(i => i.name)));
     const totalCases = uniqueDisplayedCases.size;
     const masteredCount = Array.from(uniqueDisplayedCases).filter(name => caseMap.get(name)?.status === 'Mastered').length;
@@ -100,7 +101,7 @@ export const CaseManager: React.FC<CaseManagerProps> = ({ category }) => {
                         {category === 'CSP' && <Target className="text-purple-500" />}
                         {category === 'PBL' && <Grid3X3 className="text-pink-500" />}
                         {category} Training Matrix
-                        <Tooltip text={`Select multiple subsets below. The search bar filters cases instantly (e.g. type 'shell' or 'Ul/Ur').`} />
+                        <Tooltip text={`Select multiple subsets below. The search bar filters cases instantly.`} />
                     </h2>
 
                     <div className="relative w-full md:w-64">

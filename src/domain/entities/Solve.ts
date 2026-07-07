@@ -1,14 +1,13 @@
 export interface Solve {
     id?: number;
-    date: Date;
-    dateStr: string; // YYYY-MM-DD
-    time: number; // in seconds, 0 for DNF
+    time: string;
     scramble: string;
-    comment: string;
-    block: 'Speedsolving' | 'Case recognition';
-    oblCase?: string;
+    date: string;
+    dateStr: string;
+    comment?: string;
+    penalty?: string;
+    block: string;
     isCsp: boolean;
     isObl: boolean;
-    isDnf: boolean;
-    isPlusTwo: boolean;
+    oblCase?: string;
 }

@@ -1,9 +1,8 @@
 ﻿import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid } from 'recharts';
 import type { Solve } from '../../domain/entities/Solve';
 
-// Tipado estricto: Eliminamos el 'any' declarando que espera objetos con un número 'time'
-const getFrequencyData = (solves: { time: number }[]) => {
-    const times = solves.map(s => s.time);
+const getFrequencyData = (solves: Solve[]) => {
+    const times = solves.map(s => Number(s.time));
     if (times.length === 0) return [];
 
     const min = Math.floor(Math.min(...times));
@@ -21,7 +20,7 @@ const getFrequencyData = (solves: { time: number }[]) => {
 };
 
 export const DashboardView = ({ solves, viewMode }: { solves: Solve[], viewMode: string }) => {
-    const validSolves = solves.filter(s => s.time > 0);
+    const validSolves = solves.filter(s => Number(s.time) > 0);
     const totalCount = validSolves.length;
 
     let mean = 0;
@@ -29,7 +28,7 @@ export const DashboardView = ({ solves, viewMode }: { solves: Solve[], viewMode:
     if (totalCount > 0) {
         // Cálculo WCA con Trim del 5%
         const trim = Math.ceil(totalCount * 0.05);
-        const sorted = [...validSolves.map(s => s.time)].sort((a, b) => a - b);
+        const sorted = [...validSolves.map(s => Number(s.time))].sort((a, b) => a - b);
         const trimmed = sorted.slice(trim, sorted.length - trim);
         const sum = trimmed.reduce((a, b) => a + b, 0);
         mean = trimmed.length > 0 ? sum / trimmed.length : 0;

@@ -1,7 +1,6 @@
 ﻿import { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './infrastructure/database/db';
-import { useSessionMetrics } from './presentation/hooks/useSessionMetrics';
 import { ImportForm } from './presentation/components/ImportForm';
 import { DailyHistoryView } from './presentation/components/DailyHistoryView';
 import { CaseManager } from './presentation/components/CaseManager';
@@ -11,10 +10,10 @@ import {
     OBL_BASE_CASES, OBL_CO_CASES, OBL_EO_CASES, CSP_CASES,
     NP_PBL_BASE_CASES, DP_PBL_BASE_CASES, PBL_CP_CASES, PBL_EP_CASES
 } from './domain/constants/cases';
-import { LayoutDashboard, CalendarClock, Target, History, BookOpenText, ShieldAlert, BarChart3, X, Loader2, Copy, Grid3X3, Info, Plus, ChevronUp, ChevronDown } from 'lucide-react';
+import { LayoutDashboard, CalendarClock, Target, Database, BookOpenText, ShieldAlert, BarChart3, X, Loader2, Copy, Grid3X3, Info, Plus, Pencil, Trash2, Trophy } from 'lucide-react';
 import type { Solve } from './domain/entities/Solve';
 
-export type BlockMode = 'Global' | 'Speedsolving' | 'Case recognition' | string;
+export type BlockMode = 'Global (View All)' | 'Global' | string;
 export type ViewModeType = 'Dashboard' | 'Daily' | 'CSP' | 'OBL' | 'PBL' | 'Historical';
 export interface MetricStat { best: string; solves: Solve[]; }
 
@@ -56,49 +55,90 @@ const ProgressBar = ({ label, current, total, color, bg }: { label: string, curr
 
 export default function App() {
     const [viewMode, setViewMode] = useState<ViewModeType>('Dashboard');
-    const [blockFilter, setBlockFilter] = useState<BlockMode>('Speedsolving');
+    const [blockFilter, setBlockFilter] = useState<BlockMode>('Global');
 
-    const allBlocks = useLiveQuery(() => db.solves.orderBy('block').uniqueKeys()) || [];
-    const [localSessions, setLocalSessions] = useState<string[]>([]);
-    const sessions = Array.from(new Set(['Speedsolving', ...allBlocks.map(String), ...localSessions]));
+    const allSolvesDb: (Solve & { id?: number })[] =
+        useLiveQuery(() => db.solves.toArray(), []) ?? [];
+
+    // Obtenemos los solves dependiendo de si es la vista mezclada o una sesión específica
+    const solves = blockFilter === 'Global (View All)'
+        ? allSolvesDb
+        : allSolvesDb.filter(s => s.block === blockFilter);
+
+    // Lista de sesiones dinámicas extraidas de la BD
+    const dbSessions = Array.from(new Set(allSolvesDb.map(s => s.block)));
+    const sessions = Array.from(new Set(['Global', ...dbSessions]));
 
     const handleCreateSession = () => {
         const name = window.prompt("Enter new session name:");
         if (name && name.trim() !== '') {
-            const cleanName = name.trim();
-            setLocalSessions(prev => [...prev, cleanName]);
+            setBlockFilter(name.trim());
+        }
+    };
+
+    const handleRenameSession = async () => {
+        if (blockFilter === 'Global' || blockFilter === 'Global (View All)') {
+            alert("Cannot rename your base 'Global' session.");
+            return;
+        }
+        const newName = window.prompt(`Rename session '${blockFilter}' to:`);
+        if (newName && newName.trim() !== '') {
+            const cleanName = newName.trim();
+            const solvesToUpdate = allSolvesDb.filter(s => s.block === blockFilter);
+            for (const solve of solvesToUpdate) {
+                if (solve.id !== undefined) await db.solves.update(solve.id, { block: cleanName });
+            }
             setBlockFilter(cleanName);
         }
     };
 
-    const [expandedAudit, setExpandedAudit] = useState<'OBL' | 'CSP' | null>(null);
+    const handleDeleteSession = async () => {
+        if (blockFilter === 'Global' || blockFilter === 'Global (View All)') return;
+
+        const migrateToGlobal = window.confirm(`Do you want to MIGRATE all times from '${blockFilter}' into your 'Global' session before deleting?\n\nClick OK to MIGRATE.\nClick CANCEL to DELETE PERMANENTLY.`);
+
+        if (migrateToGlobal) {
+            const solvesToUpdate = allSolvesDb.filter(s => s.block === blockFilter);
+            for (const solve of solvesToUpdate) {
+                if (solve.id !== undefined) await db.solves.update(solve.id, { block: 'Global' });
+            }
+            alert(`Migrated ${solvesToUpdate.length} solves to Global and removed session.`);
+        } else {
+            const deletePermanently = window.confirm(`WARNING: You selected CANCEL. This means the session '${blockFilter}' and ALL ITS TIMES will be permanently DELETED. Proceed?`);
+            if (deletePermanently) {
+                const solvesToDelete = allSolvesDb.filter(s => s.block === blockFilter).map(s => s.id as number);
+                await db.solves.bulkDelete(solvesToDelete);
+                alert(`Session deleted permanently.`);
+            } else {
+                return;
+            }
+        }
+        setBlockFilter('Global');
+    };
+
+    const [auditFilter, setAuditFilter] = useState<'CSP' | 'OBL' | 'PBL'>('CSP');
     const [metrics, setMetrics] = useState<SessionMetricsData | null>(null);
     const [isCrunching, setIsCrunching] = useState(false);
     const [selectedRecord, setSelectedRecord] = useState<{ label: string, avg: string, solves: Solve[] } | null>(null);
 
-    const solves = useSessionMetrics(blockFilter);
+    const [prs, setPrs] = useState<{ type: string; time: string; date: string; solves: Solve[]; }[]>([]);
+    const [isCalculatingPrs, setIsCalculatingPrs] = useState(true);
 
-    const oblSolves = solves.filter((s: Solve) => s.isObl && !s.isCsp && Number(s.time) > 0);
-    const cspSolves = solves.filter((s: Solve) => s.isCsp && !s.isObl && Number(s.time) > 0);
-    const comboSolves = solves.filter((s: Solve) => s.isObl && s.isCsp && Number(s.time) > 0);
-
-    const calcAvg = (arr: Solve[]) => arr.length > 0 ? (arr.reduce((acc, s) => acc + Number(s.time), 0) / arr.length).toFixed(2) : '0.00';
-
-    const caseAudit = {
-        totalOBL: oblSolves.length, avgOBL: calcAvg(oblSolves),
-        totalCSP: cspSolves.length, avgCSP: calcAvg(cspSolves),
-        totalCombo: comboSolves.length, avgCombo: calcAvg(comboSolves),
+    const auditSolves = solves.filter(s => s.comment && s.comment.trim() !== '');
+    const auditParsed = {
+        CSP: {
+            good: auditSolves.filter(s => s.comment?.toLowerCase().includes('csp') && s.comment?.toLowerCase().match(/(good|correcto|bien|✓)/)).length,
+            bad: auditSolves.filter(s => s.comment?.toLowerCase().includes('csp') && s.comment?.toLowerCase().match(/(bad|error|mal|fail|x)/)).length
+        },
+        OBL: {
+            good: auditSolves.filter(s => s.comment?.toLowerCase().includes('obl') && s.comment?.toLowerCase().match(/(good|correcto|bien|✓)/)).length,
+            bad: auditSolves.filter(s => s.comment?.toLowerCase().includes('obl') && s.comment?.toLowerCase().match(/(bad|error|mal|fail|x)/)).length
+        },
+        PBL: {
+            good: auditSolves.filter(s => s.comment?.toLowerCase().includes('pbl') && s.comment?.toLowerCase().match(/(good|correcto|bien|✓)/)).length,
+            bad: auditSolves.filter(s => s.comment?.toLowerCase().includes('pbl') && s.comment?.toLowerCase().match(/(bad|error|mal|fail|x)/)).length
+        }
     };
-
-    const oblCounts = oblSolves.reduce((acc, s) => {
-        if (s.oblCase) acc[s.oblCase] = (acc[s.oblCase] || 0) + 1;
-        return acc;
-    }, {} as Record<string, number>);
-    const topOBLs = Object.entries(oblCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
-
-    const cspGood = cspSolves.filter(s => (s.comment || '').toLowerCase().match(/(good|correcto|bien|✓)/)).length;
-    const cspBad = cspSolves.filter(s => (s.comment || '').toLowerCase().match(/(bad|error|mal|fail|x)/)).length;
-    const cspNeutral = cspSolves.length - cspGood - cspBad;
 
     const savedCases = useLiveQuery(() => db.cases.toArray()) || [];
 
@@ -115,6 +155,16 @@ export default function App() {
     const cpLearned = Array.from(masteredPBL).filter(name => PBL_CP_CASES.includes(name)).length;
     const epLearned = Array.from(masteredPBL).filter(name => PBL_EP_CASES.includes(name)).length;
 
+    const calculateAvg = (times: number[], size: number): number => {
+        if (times.length !== size) return Infinity;
+        if (size === 3) return times.reduce((a, b) => a + b, 0) / 3;
+        const trim = Math.ceil(size * 0.05);
+        const sorted = [...times].sort((a, b) => a - b);
+        const trimmed = sorted.slice(trim, size - trim);
+        return trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
+    };
+
+    // 1. MÉTRICAS DINÁMICAS (Cambian según la sesión)
     useEffect(() => {
         let isMounted = true;
         const computeMetrics = async () => {
@@ -130,8 +180,8 @@ export default function App() {
                 const globalAvgResult = globalTrimmed.length > 0 ? (globalTrimmed.reduce((a, b) => a + b, 0) / globalTrimmed.length).toFixed(2) : '-';
 
                 let bestSingleSolve = validSolves[0];
-                for (const s of validSolves) {
-                    if (Number(s.time) < Number(bestSingleSolve.time)) bestSingleSolve = s;
+                for (const solve of validSolves) {
+                    if (Number(solve.time) < Number(bestSingleSolve.time)) bestSingleSolve = solve;
                 }
 
                 const newMetrics: SessionMetricsData = {
@@ -144,20 +194,12 @@ export default function App() {
                     { label: 'ao200', size: 200 }, { label: 'ao500', size: 500 }, { label: 'ao1000', size: 1000 }, { label: 'ao2000', size: 2000 }, { label: 'ao5000', size: 5000 }, { label: 'ao10000', size: 10000 }
                 ];
 
-                const computeSingleAverage = (wTimes: number[], size: number) => {
-                    if (size === 3) return wTimes.reduce((a, b) => a + b, 0) / 3;
-                    const trim = Math.ceil(size * 0.05);
-                    const sorted = [...wTimes].sort((a, b) => a - b);
-                    const trimmed = sorted.slice(trim, size - trim);
-                    return trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
-                };
-
                 for (const cat of categories) {
                     if (!isMounted) return;
                     if (times.length < cat.size) { newMetrics[cat.label] = { best: '-', solves: [] }; continue; }
                     let best = Infinity, bestWindow: Solve[] = [];
                     for (let i = 0; i <= times.length - cat.size; i++) {
-                        const avg = computeSingleAverage(times.slice(i, i + cat.size), cat.size);
+                        const avg = calculateAvg(times.slice(i, i + cat.size), cat.size);
                         if (avg < best) { best = avg; bestWindow = validSolves.slice(i, i + cat.size); }
                         if (i % 300 === 0) { await new Promise(r => setTimeout(r, 0)); if (!isMounted) return; }
                     }
@@ -170,13 +212,54 @@ export default function App() {
         return () => { isMounted = false; };
     }, [solves.length, blockFilter]);
 
+    // 2. ABSOLUTE PRs FIJOS (Leen toda la BD ignorando la sesión activa)
+    useEffect(() => {
+        let isMounted = true;
+        const computePrs = async () => {
+            const validSolves = allSolvesDb.filter(s => Number(s.time) > 0);
+            if (validSolves.length === 0) { setPrs([]); setIsCalculatingPrs(false); return; }
+            try {
+                if (isMounted) setIsCalculatingPrs(true);
+                const times = validSolves.map(s => Number(s.time));
+
+                let bestSingleSolve = validSolves[0];
+                for (const solve of validSolves) {
+                    if (Number(solve.time) < Number(bestSingleSolve.time)) bestSingleSolve = solve;
+                }
+
+                const categories = [3, 5, 12, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
+                const records = [];
+
+                for (const size of categories) {
+                    if (!isMounted) return;
+                    if (times.length < size) continue;
+                    let best = Infinity, bestWindow: Solve[] = [];
+                    for (let i = 0; i <= times.length - size; i++) {
+                        const avg = calculateAvg(times.slice(i, i + size), size);
+                        if (avg < best) { best = avg; bestWindow = validSolves.slice(i, i + size); }
+                        if (i % 300 === 0) { await new Promise(r => setTimeout(r, 0)); if (!isMounted) return; }
+                    }
+                    if (best !== Infinity) {
+                        records.push({ type: size === 3 ? 'Mo3' : `Ao${size}`, time: best.toFixed(2), date: bestWindow[bestWindow.length - 1]?.dateStr || '', solves: bestWindow });
+                    }
+                }
+                if (isMounted) {
+                    setPrs([{ type: 'Single', time: Number(bestSingleSolve.time).toFixed(2), date: bestSingleSolve.dateStr, solves: [bestSingleSolve] }, ...records]);
+                    setIsCalculatingPrs(false);
+                }
+            } catch (e) { console.error(e); }
+        };
+        computePrs();
+        return () => { isMounted = false; };
+    }, [allSolvesDb.length]);
+
     const navItems = [
         { id: 'Dashboard', label: 'Dashboard', icon: LayoutDashboard },
-        { id: 'Daily', label: 'Daily History', icon: CalendarClock },
+        { id: 'Daily', label: 'Daily Tracker', icon: CalendarClock },
         { id: 'CSP', label: 'CSP Lab', icon: Target },
         { id: 'OBL', label: 'OBL Lab', icon: BookOpenText },
         { id: 'PBL', label: 'PBL Lab', icon: Grid3X3 },
-        { id: 'Historical', label: 'Data & Sessions', icon: History },
+        { id: 'Historical', label: 'Data & Sessions', icon: Database },
     ] as const;
 
     const copyToClipboard = () => {
@@ -190,7 +273,19 @@ export default function App() {
         <div className="min-h-screen bg-gray-950 font-sans text-gray-100 selection:bg-blue-500/30">
             <header className="sticky top-0 z-20 border-b border-gray-800 bg-gray-950/80 backdrop-blur-md">
                 <div className="mx-auto flex max-w-7xl items-center justify-between p-4">
-                    <h1 className="text-xl font-black tracking-tight text-white">SQ-1 <span className="text-emerald-500">CORE ENGINE</span></h1>
+
+                    <div className="group flex cursor-pointer items-center gap-3" onClick={() => setViewMode('Dashboard')}>
+                        <img
+                            src="/logo.png"
+                            alt="SQ1 Logo"
+                            className="h-8 w-8 rounded-md object-contain transition-transform group-hover:scale-105"
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                        />
+                        <h1 className="text-xl font-black tracking-tight text-white transition group-hover:text-emerald-400">
+                            SQ-1 <span className="text-emerald-500">CORE ENGINE</span>
+                        </h1>
+                    </div>
+
                     <nav className="custom-scrollbar flex gap-1 overflow-x-auto pb-1 md:pb-0">
                         {navItems.map((item) => (
                             <button
@@ -207,142 +302,166 @@ export default function App() {
 
             <main className="mx-auto max-w-7xl p-4 md:p-8">
                 {viewMode === 'Dashboard' && (
-                    <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-                        <div className="space-y-6 lg:col-span-1">
-                            <ImportForm />
+                    <div className="space-y-8">
+                        <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+                            <div className="space-y-6 lg:col-span-1">
+                                <ImportForm />
 
-                            <div className="flex w-full items-center gap-3 rounded-xl border border-gray-800 bg-gray-900 p-4 shadow-xl">
-                                <div className="flex flex-1 flex-col">
-                                    <div className="mb-2 flex items-center">
-                                        <span className="text-xs font-bold tracking-wider text-gray-400 uppercase">Active Session</span>
-                                        <Tooltip text="Change the active session here. 'Global' merges all data across all sessions." />
+                                <div className="flex w-full items-center gap-3 rounded-xl border border-gray-800 bg-gray-900 p-4 shadow-xl">
+                                    <div className="flex flex-1 flex-col">
+                                        <div className="mb-2 flex items-center">
+                                            <span className="text-xs font-bold tracking-wider text-gray-400 uppercase">Active Session</span>
+                                            <Tooltip text="'Global' is your base session. You can create other sessions and freely delete them." />
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <select
+                                                value={blockFilter}
+                                                onChange={(e) => setBlockFilter(e.target.value)}
+                                                className="w-full cursor-pointer bg-black border border-gray-700 text-white text-sm font-bold rounded-lg p-2.5 outline-none focus:border-blue-500 transition hover:border-gray-500"
+                                            >
+                                                <option value="Global (View All)">[View All Sessions Mixed]</option>
+                                                <optgroup label="Your Sessions">
+                                                    {sessions.map(s => <option key={s} value={s}>{s}</option>)}
+                                                </optgroup>
+                                            </select>
+                                        </div>
                                     </div>
-                                    <select
-                                        value={blockFilter}
-                                        onChange={(e) => setBlockFilter(e.target.value)}
-                                        className="w-full cursor-pointer bg-black border border-gray-700 text-white text-sm font-bold rounded-lg p-2.5 outline-none focus:border-blue-500 transition hover:border-gray-500"
-                                    >
-                                        <option value="Global">Global (All Sessions)</option>
-                                        <optgroup label="Your Sessions">
-                                            {sessions.map(s => <option key={s} value={s}>{s}</option>)}
-                                        </optgroup>
-                                    </select>
+                                    <div className="mt-6 flex flex-col gap-1">
+                                        <button onClick={handleCreateSession} title="New Session" className="flex items-center justify-center rounded-lg bg-blue-600 px-2 py-1.5 font-bold text-white transition hover:bg-blue-500">
+                                            <Plus className="h-4 w-4" />
+                                        </button>
+                                        {blockFilter !== 'Global' && blockFilter !== 'Global (View All)' && (
+                                            <div className="flex gap-1">
+                                                <button onClick={handleRenameSession} title="Rename Session" className="flex items-center justify-center rounded-lg bg-gray-800 px-2 py-1.5 text-gray-300 transition hover:bg-gray-700">
+                                                    <Pencil className="h-3 w-3" />
+                                                </button>
+                                                <button onClick={handleDeleteSession} title="Delete Session" className="flex items-center justify-center rounded-lg bg-red-900/50 px-2 py-1.5 text-white transition hover:bg-red-600">
+                                                    <Trash2 className="h-3 w-3" />
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                                <button onClick={handleCreateSession} title="New Session" className="mt-6 flex items-center justify-center rounded-lg bg-blue-600 px-3 py-2.5 font-bold text-white shadow-lg shadow-blue-900/50 transition hover:bg-blue-500">
-                                    <Plus className="h-5 w-5" />
-                                </button>
+
+                                <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 shadow-xl">
+                                    <h3 className="mb-4 flex items-center text-sm font-bold tracking-wider text-gray-400 uppercase">
+                                        <BarChart3 className="mr-2 h-4 w-4 text-emerald-500" /> Algorithm Mastery
+                                    </h3>
+
+                                    <div className="space-y-4">
+                                        <div>
+                                            <div className="mb-2 border-b border-gray-800 pb-1 font-black tracking-widest text-[10px] text-gray-600 uppercase">CSP Module</div>
+                                            <ProgressBar label="CSP Overall" current={cspLearned} total={CSP_CASES.length} color="text-purple-400" bg="bg-purple-500" />
+                                        </div>
+
+                                        <div>
+                                            <div className="mb-2 border-b border-gray-800 pb-1 font-black tracking-widest text-[10px] text-gray-600 uppercase">5-Look Mod (Intermediate)</div>
+                                            <ProgressBar label="CO (Corner Orient.)" current={coLearned} total={OBL_CO_CASES.length} color="text-sky-400" bg="bg-sky-500" />
+                                            <ProgressBar label="EO (Edge Orient.)" current={eoLearned} total={OBL_EO_CASES.length} color="text-cyan-400" bg="bg-cyan-500" />
+                                            <ProgressBar label="CP (Corner Perm.)" current={cpLearned} total={PBL_CP_CASES.length} color="text-fuchsia-400" bg="bg-fuchsia-500" />
+                                            <ProgressBar label="EP (Edge Perm.)" current={epLearned} total={PBL_EP_CASES.length} color="text-purple-400" bg="bg-purple-500" />
+                                        </div>
+
+                                        <div>
+                                            <div className="mb-2 border-b border-gray-800 pb-1 font-black tracking-widest text-[10px] text-gray-600 uppercase">3-Look Mod (Advanced)</div>
+                                            <ProgressBar label="OBL (Slices)" current={oblLearned} total={OBL_BASE_CASES.length} color="text-blue-400" bg="bg-blue-500" />
+                                            <ProgressBar label="NP PBL" current={npPblLearned} total={NP_PBL_BASE_CASES.length} color="text-pink-400" bg="bg-pink-500" />
+                                            <ProgressBar label="DP PBL" current={dpPblLearned} total={DP_PBL_BASE_CASES.length} color="text-rose-400" bg="bg-rose-500" />
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
-                            <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 shadow-xl">
-                                <h3 className="mb-4 flex items-center text-sm font-bold tracking-wider text-gray-400 uppercase">
-                                    <BarChart3 className="mr-2 h-4 w-4 text-emerald-500" /> Algorithm Mastery
-                                    <Tooltip text="Tracks cases manually marked as 'Mastered' in the Labs." />
-                                </h3>
-
-                                <div className="space-y-4">
-                                    <div>
-                                        <div className="mb-2 border-b border-gray-800 pb-1 font-black tracking-widest text-[10px] text-gray-600 uppercase">CSP Module</div>
-                                        <ProgressBar label="CSP Overall" current={cspLearned} total={CSP_CASES.length} color="text-purple-400" bg="bg-purple-500" />
+                            <div className="space-y-8 lg:col-span-2">
+                                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                                    <div className="relative min-h-[300px] rounded-xl border border-gray-800 bg-gray-900 p-6 shadow-xl">
+                                        <h3 className="mb-4 flex items-center text-sm font-bold tracking-wider text-gray-400 uppercase">
+                                            WCA Stats <span className="ml-1 text-gray-600">({solves.length} solves)</span>
+                                            <Tooltip text="Click on any average row to view the detailed list of solves and copy the scrambles." />
+                                        </h3>
+                                        {isCrunching ? (
+                                            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-xl bg-gray-900/80 backdrop-blur-sm">
+                                                <Loader2 className="mb-2 h-8 w-8 animate-spin text-blue-500" />
+                                                <span className="text-xs font-bold tracking-wider uppercase">Crunching Stats...</span>
+                                            </div>
+                                        ) : null}
+                                        {metrics ? (
+                                            <div className="font-mono text-base">
+                                                <div className="grid grid-cols-2 gap-x-8 gap-y-2">
+                                                    {[
+                                                        { label: 'Single', data: metrics.single }, { label: 'Mo3', data: metrics.mo3 }, { label: 'Ao5', data: metrics.ao5 }, { label: 'Ao12', data: metrics.ao12 },
+                                                        { label: 'Ao50', data: metrics.ao50 }, { label: 'Ao100', data: metrics.ao100 }, { label: 'Ao200', data: metrics.ao200 }, { label: 'Ao500', data: metrics.ao500 },
+                                                        { label: 'Ao1000', data: metrics.ao1000 }, { label: 'Ao2000', data: metrics.ao2000 }, { label: 'Ao3000', data: metrics.ao3000 }, { label: 'Ao4000', data: metrics.ao4000 },
+                                                        { label: 'Ao5000', data: metrics.ao5000 }, { label: 'Ao10000', data: metrics.ao10000 }
+                                                    ].map(row => {
+                                                        if (!row.data || row.data.best === '-') return null;
+                                                        const handleOpenModal = () => { if (row.data) setSelectedRecord({ label: row.label, avg: row.data.best, solves: row.data.solves || [] }); };
+                                                        return (
+                                                            <div key={row.label} onClick={handleOpenModal} className="group flex cursor-pointer items-center justify-between rounded border-b border-gray-800/30 px-2 py-1.5 transition hover:bg-gray-800/50">
+                                                                <span className="text-sm font-bold text-gray-400 transition group-hover:text-white">{row.label}</span>
+                                                                <span className="font-bold text-emerald-400">{row.data.best}s</span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                                <div className="mt-6 flex items-end justify-between rounded-lg border-t border-gray-700 bg-gray-950 p-4 pt-4">
+                                                    <span className="text-sm font-bold tracking-wider text-gray-400 uppercase">Global Average</span>
+                                                    <span className="text-3xl font-black text-blue-400">{metrics.globalAvg.result}s</span>
+                                                </div>
+                                            </div>
+                                        ) : (<div className="flex h-48 items-center justify-center rounded-lg border border-dashed border-gray-800 text-sm text-gray-600 italic">No session data available.</div>)}
                                     </div>
 
-                                    <div>
-                                        <div className="mb-2 border-b border-gray-800 pb-1 font-black tracking-widest text-[10px] text-gray-600 uppercase">3-Look Mod (Advanced)</div>
-                                        <ProgressBar label="OBL (Slices)" current={oblLearned} total={OBL_BASE_CASES.length} color="text-blue-400" bg="bg-blue-500" />
-                                        <ProgressBar label="NP PBL" current={npPblLearned} total={NP_PBL_BASE_CASES.length} color="text-pink-400" bg="bg-pink-500" />
-                                        <ProgressBar label="DP PBL" current={dpPblLearned} total={DP_PBL_BASE_CASES.length} color="text-rose-400" bg="bg-rose-500" />
-                                    </div>
+                                    <div className="h-fit rounded-xl border border-gray-800 bg-gray-900 p-6 shadow-xl">
+                                        <div className="mb-4 flex items-center justify-between">
+                                            <h3 className="flex items-center gap-2 text-sm font-bold tracking-wider text-gray-400 uppercase">
+                                                <ShieldAlert className="h-4 w-4 text-amber-500" /> Case Audit
+                                                <Tooltip text="Analyzes your timer comments to calculate success rates for specific cases (looks for 'CSP/OBL/PBL' and 'good/bad' in comments)." />
+                                            </h3>
+                                        </div>
 
-                                    <div>
-                                        <div className="mb-2 border-b border-gray-800 pb-1 font-black tracking-widest text-[10px] text-gray-600 uppercase">5-Look Mod (Intermediate)</div>
-                                        <ProgressBar label="CO (Corner Orient.)" current={coLearned} total={OBL_CO_CASES.length} color="text-sky-400" bg="bg-sky-500" />
-                                        <ProgressBar label="EO (Edge Orient.)" current={eoLearned} total={OBL_EO_CASES.length} color="text-cyan-400" bg="bg-cyan-500" />
-                                        <ProgressBar label="CP (Corner Perm.)" current={cpLearned} total={PBL_CP_CASES.length} color="text-fuchsia-400" bg="bg-fuchsia-500" />
-                                        <ProgressBar label="EP (Edge Perm.)" current={epLearned} total={PBL_EP_CASES.length} color="text-purple-400" bg="bg-purple-500" />
+                                        <div className="mb-4 flex rounded-lg border border-gray-800 bg-black p-1">
+                                            {['CSP', 'OBL', 'PBL'].map(f => (
+                                                <button key={f} onClick={() => setAuditFilter(f as 'CSP' | 'OBL' | 'PBL')} className={`flex-1 py-1.5 text-xs font-bold rounded transition ${auditFilter === f ? 'bg-amber-600 text-white' : 'text-gray-500 hover:text-white'}`}>
+                                                    {f}
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        <div className="space-y-2 rounded-lg border border-gray-800 bg-gray-950 p-4 font-mono text-xs text-gray-400">
+                                            <div className="flex items-center justify-between rounded border border-emerald-900/50 bg-emerald-950/30 p-2"><span className="text-emerald-500">Correct (Good)</span><span className="font-bold text-emerald-400">{auditParsed[auditFilter].good} solves</span></div>
+                                            <div className="flex items-center justify-between rounded border border-red-900/50 bg-red-950/30 p-2"><span className="text-red-500">Failed (Bad)</span><span className="font-bold text-red-400">{auditParsed[auditFilter].bad} solves</span></div>
+                                            <div className="mt-3 flex items-center justify-between border-t border-gray-800 pt-3">
+                                                <span className="text-gray-500">Total Analyzed</span>
+                                                <span className="font-bold text-white">{auditParsed[auditFilter].good + auditParsed[auditFilter].bad}</span>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
+                                <DashboardView solves={solves} viewMode={blockFilter as BlockMode} />
                             </div>
                         </div>
 
-                        <div className="space-y-8 lg:col-span-2">
-                            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                                <div className="relative min-h-[300px] rounded-xl border border-gray-800 bg-gray-900 p-6 shadow-xl">
-                                    <h3 className="mb-4 flex items-center text-sm font-bold tracking-wider text-gray-400 uppercase">
-                                        WCA Stats <span className="ml-1 text-gray-600">({solves.length} solves)</span>
-                                        <Tooltip text="Click on any average row to view the detailed list of solves and copy the scrambles." />
-                                    </h3>
-                                    {isCrunching ? (
-                                        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-xl bg-gray-900/80 backdrop-blur-sm">
-                                            <Loader2 className="mb-2 h-8 w-8 animate-spin text-blue-500" />
-                                            <span className="text-xs font-bold tracking-wider uppercase">Crunching Stats...</span>
-                                        </div>
-                                    ) : null}
-                                    {metrics ? (
-                                        <div className="font-mono text-base">
-                                            <div className="grid grid-cols-2 gap-x-8 gap-y-2">
-                                                {[
-                                                    { label: 'Single', data: metrics.single }, { label: 'Mo3', data: metrics.mo3 }, { label: 'Ao5', data: metrics.ao5 }, { label: 'Ao12', data: metrics.ao12 },
-                                                    { label: 'Ao50', data: metrics.ao50 }, { label: 'Ao100', data: metrics.ao100 }, { label: 'Ao200', data: metrics.ao200 }, { label: 'Ao500', data: metrics.ao500 },
-                                                    { label: 'Ao1000', data: metrics.ao1000 }, { label: 'Ao2000', data: metrics.ao2000 }, { label: 'Ao3000', data: metrics.ao3000 }, { label: 'Ao4000', data: metrics.ao4000 },
-                                                    { label: 'Ao5000', data: metrics.ao5000 }, { label: 'Ao10000', data: metrics.ao10000 }
-                                                ].map(row => {
-                                                    if (!row.data || row.data.best === '-') return null;
-                                                    const handleOpenModal = () => { if (row.data) setSelectedRecord({ label: row.label, avg: row.data.best, solves: row.data.solves || [] }); };
-                                                    return (
-                                                        <div key={row.label} onClick={handleOpenModal} className="group flex cursor-pointer items-center justify-between rounded border-b border-gray-800/30 px-2 py-1.5 transition hover:bg-gray-800/50">
-                                                            <span className="text-sm font-bold text-gray-400 transition group-hover:text-white">{row.label}</span>
-                                                            <span className="font-bold text-emerald-400">{row.data.best}s</span>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                            <div className="mt-6 flex items-end justify-between rounded-lg border-t border-gray-700 bg-gray-950 p-4 pt-4">
-                                                <span className="text-sm font-bold tracking-wider text-gray-400 uppercase">Global Average</span>
-                                                <span className="text-3xl font-black text-blue-400">{metrics.globalAvg.result}s</span>
-                                            </div>
-                                        </div>
-                                    ) : (<div className="flex h-48 items-center justify-center rounded-lg border border-dashed border-gray-800 text-sm text-gray-600 italic">No session data available.</div>)}
-                                </div>
-
-                                <div className="h-fit rounded-xl border border-gray-800 bg-gray-900 p-6 shadow-xl">
-                                    <h3 className="mb-4 flex items-center gap-2 text-sm font-bold tracking-wider text-gray-400 uppercase">
-                                        <ShieldAlert className="h-4 w-4 text-amber-500" /> Case Audit
-                                        <Tooltip text="Analyzes your comments to calculate success rates for specific cases (like Good/Bad Algs)." />
-                                    </h3>
-                                    <div className="space-y-3">
-                                        <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-950">
-                                            <div onClick={() => setExpandedAudit(expandedAudit === 'OBL' ? null : 'OBL')} className="flex items-center justify-between p-3.5 cursor-pointer transition hover:bg-gray-900">
-                                                <div className="flex items-center gap-2"><span className="font-mono text-xs font-bold text-blue-400">OBL Only ({caseAudit.totalOBL})</span>{expandedAudit === 'OBL' ? <ChevronUp className="h-3 w-3 text-gray-500" /> : <ChevronDown className="h-3 w-3 text-gray-500" />}</div>
-                                                <span className="text-base font-black text-white">{caseAudit.avgOBL}s</span>
-                                            </div>
-                                            {expandedAudit === 'OBL' && (
-                                                <div className="space-y-1.5 border-t border-gray-800 bg-black p-3 font-mono text-xs text-gray-400">
-                                                    <p className="mb-2 font-sans font-bold text-gray-500">Most Frequent Cases:</p>
-                                                    {topOBLs.length > 0 ? topOBLs.map(([name, count]) => (<div key={name} className="flex justify-between"><span>{name}</span><span className="text-blue-400">{count}x</span></div>)) : <span className="text-gray-600 italic">No specific case data found.</span>}
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-950">
-                                            <div onClick={() => setExpandedAudit(expandedAudit === 'CSP' ? null : 'CSP')} className="flex items-center justify-between p-3.5 cursor-pointer transition hover:bg-gray-900">
-                                                <div className="flex items-center gap-2"><span className="font-mono text-xs font-bold text-purple-400">CSP Only ({caseAudit.totalCSP})</span>{expandedAudit === 'CSP' ? <ChevronUp className="h-3 w-3 text-gray-500" /> : <ChevronDown className="h-3 w-3 text-gray-500" />}</div>
-                                                <span className="text-base font-black text-white">{caseAudit.avgCSP}s</span>
-                                            </div>
-                                            {expandedAudit === 'CSP' && (
-                                                <div className="space-y-2 border-t border-gray-800 bg-black p-3 font-mono text-xs text-gray-400">
-                                                    <p className="mb-2 font-sans font-bold text-gray-500">Success Rate (Parsed from Comments):</p>
-                                                    <div className="flex items-center justify-between rounded border border-emerald-900/50 bg-emerald-950/30 p-2"><span className="text-emerald-500">Correct (Good)</span><span className="font-bold text-emerald-400">{cspGood} solves</span></div>
-                                                    <div className="flex items-center justify-between rounded border border-red-900/50 bg-red-950/30 p-2"><span className="text-red-500">Failed (Bad)</span><span className="font-bold text-red-400">{cspBad} solves</span></div>
-                                                    <div className="flex items-center justify-between p-2"><span className="text-gray-500">Unspecified</span><span>{cspNeutral} solves</span></div>
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-950 p-3.5 transition hover:border-amber-900/50">
-                                            <span className="font-mono text-xs font-bold text-amber-400">Combo OBL+CSP ({caseAudit.totalCombo})</span>
-                                            <span className="text-base font-black text-white">{caseAudit.avgCombo}s</span>
-                                        </div>
-                                    </div>
-                                </div>
+                        <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 shadow-xl">
+                            <div className="mb-6 flex items-center justify-between">
+                                <h2 className="flex items-center gap-2 text-xl font-bold text-white"><Trophy className="text-yellow-500" /> Absolute Personal Records</h2>
+                                {!isCalculatingPrs && prs.length > 0 && <span className="flex items-center gap-1 rounded bg-emerald-900/30 px-2 py-1 font-bold tracking-wider text-[10px] text-emerald-500 uppercase"><Database className="h-3 w-3" /> Fixed</span>}
                             </div>
-                            <DashboardView solves={solves} viewMode={blockFilter as BlockMode} />
+                            {isCalculatingPrs ? (
+                                <div className="flex flex-col items-center justify-center py-16 text-gray-400"><Loader2 className="mb-4 h-8 w-8 animate-spin text-blue-500" /><p className="mb-2 text-sm font-bold tracking-wider uppercase">Analyzing Big Data Set</p></div>
+                            ) : prs.length === 0 ? (
+                                <p className="text-sm text-gray-500 italic">No records found. Import data or enter solves manually.</p>
+                            ) : (
+                                <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+                                    {prs.map((pr) => (
+                                        <div key={pr.type} onClick={() => setSelectedRecord({ label: pr.type, avg: pr.time, solves: pr.solves })} className="flex flex-col rounded-lg border border-gray-800 bg-gray-950 p-4 transition hover:border-emerald-900/50 hover:bg-gray-900 cursor-pointer group">
+                                            <span className="mb-1 text-xs font-bold tracking-wider text-gray-500 uppercase transition group-hover:text-emerald-400">{pr.type}</span>
+                                            <span className="mb-2 text-3xl leading-none font-black text-white">{pr.time}s</span>
+                                            <span className="self-start rounded border border-gray-800 bg-gray-900 px-1.5 py-0.5 font-mono text-[10px] text-gray-500">{pr.date}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
@@ -354,7 +473,6 @@ export default function App() {
                 {viewMode === 'Historical' && <HistoricalRecords currentSession={blockFilter} />}
             </main>
 
-            {/* MODAL DE TIEMPOS + BOTÓN COPY */}
             {selectedRecord && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" onClick={() => setSelectedRecord(null)}>
                     <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-gray-800 bg-gray-950 shadow-2xl" onClick={e => e.stopPropagation()}>
