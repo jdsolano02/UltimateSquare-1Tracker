@@ -1,22 +1,19 @@
-﻿// --- OBL CASES ---
+﻿export const OBL_CO_CASES = ["1c/1c", "C-opp/C-opp", "C-adj/C-adj", "C-opp/C-adj", "C-adj/C-opp", "3c/3c", "4c/4c"];
+export const OBL_EO_CASES = ["1e/1e", "E-opp/E-opp", "E-adj/E-adj", "E-adj/E-opp", "E-opp/E-adj", "3e/3e", "4e/4e"];
+
 export const OBL_BY_SLICES = [
-    { category: "Base / Fast Cases", cases: ["line/line", "4e/4e", "L/L", "3e/3e", "L/line", "1e/1e"] },
+    { category: "Edge Orientation (EO)", cases: OBL_EO_CASES },
+    { category: "Corner Orientation (CO)", cases: OBL_CO_CASES },
     { category: "1 Slicer", cases: ["good kite/kite"] },
-    { category: "2 Slicers", cases: ["copp/copp", "good pair/pair", "good thumb/thumb", "good N/N"] },
+    { category: "2 Slicers", cases: ["good pair/pair", "good thumb/thumb", "good N/N"] },
     { category: "3 Slicers", cases: ["good arrow/pair", "good arrow/arrow", "bad arrow/arrow", "gem/axe", "good knight/axe", "good bunny/bunny", "yoshi/shell", "good yoshi/bird", "good kite/cut", "good kite/N", "good T/T", "good cut/cut", "good tie/tie", "bad tie/tie", "good T/tie"] },
-    { category: "4 Slicers", cases: ["cadj/cadj", "bad pair/pair", "bad arrow/pair", "gem/gem", "gem/knight", "gem/squid", "good knight/knight", "bad knight/knight", "squid/knight", "squid/axe", "good thumb/bunny", "bad thumb/bunny", "shell/shell", "shell/bird", "shell/hazard", "good bird/bird", "bad bird/bird", "bird/hazard", "yoshi/hazard", "kite/T", "bad kite/N", "kite/tie", "cut/T", "good cut/N", "bad cut/N", "cut/tie", "bad knight/axe", "bad T/tie", "bad T/T"] },
-    { category: "5 Slicers", cases: ["1c/1c", "3c/3c", "cadj/copp", "squid/squid", "hazard/hazard", "bad thumb/thumb", "bad kite/kite", "T/N", "tie/N", "bad yoshi/bird", "same yoshi/yoshi", "diff yoshi/yoshi", "same axe/axe", "diff axe/axe", "bad bunny/bunny", "bad N/N"] },
+    { category: "4 Slicers", cases: ["bad pair/pair", "bad arrow/pair", "gem/gem", "gem/knight", "gem/squid", "good knight/knight", "bad knight/knight", "squid/knight", "squid/axe", "good thumb/bunny", "bad thumb/bunny", "shell/shell", "shell/bird", "shell/hazard", "good bird/bird", "bad bird/bird", "bird/hazard", "yoshi/hazard", "kite/T", "bad kite/N", "kite/tie", "cut/T", "good cut/N", "bad cut/N", "cut/tie", "bad knight/axe", "bad T/tie", "bad T/T"] },
+    { category: "5 Slicers", cases: ["squid/squid", "hazard/hazard", "bad thumb/thumb", "bad kite/kite", "T/N", "tie/N", "bad yoshi/bird", "same yoshi/yoshi", "diff yoshi/yoshi", "same axe/axe", "diff axe/axe", "bad bunny/bunny", "bad N/N"] },
     { category: "6 Slicers", cases: ["bad kite/cut", "bad cut/cut"] }
 ];
 
 export const OBL_BASE_CASES = OBL_BY_SLICES.flatMap(g => g.cases);
 
-// SUB-SETS DE 5-LOOK (OBL)
-export const OBL_CO_CASES = ["1c/1c", "C-opp/C-opp", "C-adj/C-adj", "C-opp/C-adj", "C-adj/C-opp", "3c/3c", "4c/4c"];
-export const OBL_EO_CASES = ["1e/1e", "E-opp/E-opp", "E-adj/E-adj", "E-adj/E-opp", "E-opp/E-adj", "3e/3e", "4e/4e"];
-
-
-// --- CSP CASES ---
 export const CSP_CASES = [
     { name: "Left 4-2 / Paired Edges", prob: 2.61 }, { name: "Right 4-2 / Paired Edges", prob: 2.61 }, { name: "4-1-1 / Paired Edges", prob: 2.61 },
     { name: "6 / Paired Edges", prob: 1.96 }, { name: "3-3 / Paired Edges", prob: 1.96 }, { name: "Left 5-1 / Paired Edges", prob: 1.96 },
@@ -50,19 +47,14 @@ export const CSP_CASES = [
     { name: "4-4 / Star", prob: 0.27 }, { name: "2-2-2 / Parallel Edges", prob: 0.22 }, { name: "Square / Square", prob: 0.11 }
 ];
 
-
-// --- PBL CASES (3-Look) ---
-// Separamos los 44 PLLs en Pares (Even) e Impares (Odd)
 const EVEN_PLLS = ['Al', 'Ar', 'E', 'F', 'Gal', 'Gar', 'Gol', 'Gor', 'H', 'Ja', 'Jm', 'Na', 'Nm', 'Rr', 'Rl', 'T', 'Ur', 'Ul', 'V', 'Y', 'Z', '-'];
 const ODD_PLLS = ['adj', 'Ba', 'Bm', 'Cr', 'Cl', 'Da', 'Dm', 'Ka', 'Km', 'M', 'Or', 'Ol', 'opp', 'Pr', 'Pl', 'pJ', 'pN', 'Q', 'Sa', 'Sm', 'W', 'X'];
 
-// NP PBL = (Even Top x Even Bottom) + (Odd Top x Odd Bottom) -> 968 Casos
 export const NP_PBL_CASES = [
     ...EVEN_PLLS.map(top => ({ category: `[NP] ${top} Top`, cases: EVEN_PLLS.map(bot => `${top}/${bot}`) })),
     ...ODD_PLLS.map(top => ({ category: `[NP] ${top} Top`, cases: ODD_PLLS.map(bot => `${top}/${bot}`) }))
 ];
 
-// DP PBL = (Even Top x Odd Bottom) + (Odd Top x Even Bottom) -> 968 Casos
 export const DP_PBL_CASES = [
     ...EVEN_PLLS.map(top => ({ category: `[DP] ${top} Top`, cases: ODD_PLLS.map(bot => `${top}/${bot}`) })),
     ...ODD_PLLS.map(top => ({ category: `[DP] ${top} Top`, cases: EVEN_PLLS.map(bot => `${top}/${bot}`) }))
@@ -71,18 +63,19 @@ export const DP_PBL_CASES = [
 export const NP_PBL_BASE_CASES = NP_PBL_CASES.flatMap(g => g.cases);
 export const DP_PBL_BASE_CASES = DP_PBL_CASES.flatMap(g => g.cases);
 
-// --- CP & EP CASES (5-Look) ---
-export const PBL_CP_CASES = ["J/-", "-/J", "J/J", "J/N", "N/J", "N/-", "-/N", "N/N"];
-
-// EP ORGANIZADOS EN SUB-GRUPOS
-export const PBL_EP_GROUPS = [
-    { category: "H & Z Cases", cases: ["H/-", "H/H", "H/Ul", "H/Ur", "H/Z", "Z/-", "Z/H", "Z/Ul", "Z/Ur", "Z/Z"] },
-    { category: "U Cases", cases: ["Ul/-", "Ur/-", "Ul/H", "Ur/H", "Ul/Ul", "Ul/Ur", "Ur/Ul", "Ur/Ur", "Ul/Z", "Ur/Z"] },
-    { category: "W Cases", cases: ["W/adj", "W/Ol", "W/Or", "W/opp", "W/W"] },
-    { category: "O Cases", cases: ["Ol/adj", "Or/adj", "Ol/Ol", "Ol/Or", "Or/Ol", "Or/Or", "Ol/opp", "Or/opp", "Ol/W", "Or/W"] },
-    { category: "Adj Cases", cases: ["adj/adj", "adj/Ol", "adj/Or", "adj/opp", "adj/W"] },
-    { category: "Opp Cases", cases: ["opp/adj", "opp/Ol", "opp/Or", "opp/opp", "opp/W"] },
-    { category: "Solved Top", cases: ["-/H", "-/Ul", "-/Ur", "-/Z"] }
+export const PBL_CP_CASES = [
+    "Ja/-", "Jm/-", "-/Ja", "-/Jm",
+    "Ja/Ja", "Ja/Jm", "Jm/Ja", "Jm/Jm",
+    "Ja/Na", "Ja/Nm", "Jm/Na", "Jm/Nm",
+    "Na/Ja", "Na/Jm", "Nm/Ja", "Nm/Jm",
+    "Na/-", "Nm/-", "-/Na", "-/Nm",
+    "Na/Na", "Na/Nm", "Nm/Na", "Nm/Nm"
 ];
 
-export const PBL_EP_CASES = PBL_EP_GROUPS.flatMap(g => g.cases);
+export const PBL_EP_CASES = [
+    "H/-", "H/H", "H/Ul", "H/Ur", "H/Z", "Z/-", "Z/H", "Z/Ul", "Z/Ur", "Z/Z",
+    "Ul/-", "Ur/-", "Ul/H", "Ur/H", "Ul/Ul", "Ul/Ur", "Ur/Ul", "Ur/Ur", "Ul/Z", "Ur/Z",
+    "-/H", "-/Ul", "-/Ur", "-/Z", "W/adj", "W/Ol", "W/Or", "W/opp", "W/W",
+    "Ol/adj", "Or/adj", "Ol/Ol", "Ol/Or", "Or/Ol", "Or/Or", "Ol/opp", "Or/opp", "Ol/W", "Or/W",
+    "adj/adj", "adj/Ol", "adj/Or", "adj/opp", "adj/W", "opp/adj", "opp/Ol", "opp/Or", "opp/opp", "opp/W"
+];

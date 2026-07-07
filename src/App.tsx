@@ -7,10 +7,10 @@ import { CaseManager } from './presentation/components/CaseManager';
 import { HistoricalRecords } from './presentation/components/HistoricalRecords';
 import { DashboardView } from './presentation/components/DashboardView';
 import {
-    OBL_BASE_CASES, OBL_CO_CASES, OBL_EO_CASES, CSP_CASES,
-    NP_PBL_BASE_CASES, DP_PBL_BASE_CASES, PBL_CP_CASES, PBL_EP_CASES
+    OBL_BASE_CASES, CSP_CASES,
+    NP_PBL_BASE_CASES, DP_PBL_BASE_CASES
 } from './domain/constants/cases';
-import { LayoutDashboard, CalendarClock, Target, Database, BookOpenText, ShieldAlert, BarChart3, X, Loader2, Copy, Grid3X3, Info, Plus, Pencil, Trash2, Trophy } from 'lucide-react';
+import { LayoutDashboard, CalendarClock, Target, Database, BookOpenText, ShieldAlert, BarChart3, X, Loader2, Copy, Grid3X3, Plus, Pencil, Trash2, Trophy } from 'lucide-react';
 import type { Solve } from './domain/entities/Solve';
 
 export type BlockMode = 'Global (View All)' | 'Global' | string;
@@ -20,29 +20,17 @@ export interface MetricStat { best: string; solves: Solve[]; }
 export interface SessionMetricsData {
     totalSolves: number;
     globalAvg: { result: string };
-    single: MetricStat; mo3?: MetricStat; ao5?: MetricStat; ao12?: MetricStat; ao50?: MetricStat;
+    single: MetricStat; mo3?: MetricStat; ao5?: MetricStat; ao12?: MetricStat; ao25?: MetricStat; ao50?: MetricStat;
     ao100?: MetricStat; ao200?: MetricStat; ao500?: MetricStat; ao1000?: MetricStat;
-    ao2000?: MetricStat; ao3000?: MetricStat; ao4000?: MetricStat; ao5000?: MetricStat; ao10000?: MetricStat;
+    ao2000?: MetricStat; ao5000?: MetricStat; ao10000?: MetricStat;
     [key: string]: MetricStat | number | { result: string } | undefined;
 }
-
-const Tooltip = ({ text }: { text: string }) => (
-    <div className="group relative ml-2 inline-flex items-center justify-center">
-        <Info className="h-4 w-4 cursor-help text-gray-500 transition hover:text-blue-400" />
-        <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-56 -translate-x-1/2 opacity-0 transition-opacity group-hover:opacity-100">
-            <div className="rounded bg-gray-100 p-2.5 text-center font-sans leading-snug font-bold text-[11px] text-gray-900 shadow-xl">
-                {text}
-            </div>
-            <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-100"></div>
-        </div>
-    </div>
-);
 
 const ProgressBar = ({ label, current, total, color, bg }: { label: string, current: number, total: number, color: string, bg: string }) => {
     const pct = total === 0 ? 0 : Math.round((current / total) * 100);
     return (
-        <div className="mb-3 last:mb-0">
-            <div className="mb-1 flex justify-between font-bold text-[11px]">
+        <div className="mb-2 last:mb-0">
+            <div className="mb-1 flex justify-between font-bold tracking-wider text-[10px] uppercase">
                 <span className="text-gray-400">{label}</span>
                 <span className="text-white">{current} / {total} <span className={color}>({pct}%)</span></span>
             </div>
@@ -57,62 +45,52 @@ export default function App() {
     const [viewMode, setViewMode] = useState<ViewModeType>('Dashboard');
     const [blockFilter, setBlockFilter] = useState<BlockMode>('Global');
 
-    const allSolvesDb: (Solve & { id?: number })[] =
-        useLiveQuery(() => db.solves.toArray(), []) ?? [];
+    const allSolvesDb = useLiveQuery(() => db.solves.toArray(), []) ?? [];
+    const solves = blockFilter === 'Global (View All)' ? allSolvesDb : allSolvesDb.filter(s => s.block === blockFilter);
 
-    // Obtenemos los solves dependiendo de si es la vista mezclada o una sesión específica
-    const solves = blockFilter === 'Global (View All)'
-        ? allSolvesDb
-        : allSolvesDb.filter(s => s.block === blockFilter);
+    const [localSessions, setLocalSessions] = useState<string[]>(() => {
+        const saved = localStorage.getItem('sq1_sessions');
+        return saved ? JSON.parse(saved) : [];
+    });
 
-    // Lista de sesiones dinámicas extraidas de la BD
+    useEffect(() => { localStorage.setItem('sq1_sessions', JSON.stringify(localSessions)); }, [localSessions]);
+
     const dbSessions = Array.from(new Set(allSolvesDb.map(s => s.block)));
-    const sessions = Array.from(new Set(['Global', ...dbSessions]));
+    const sessions = Array.from(new Set(['Global', ...dbSessions, ...localSessions]));
 
     const handleCreateSession = () => {
         const name = window.prompt("Enter new session name:");
         if (name && name.trim() !== '') {
-            setBlockFilter(name.trim());
+            const clean = name.trim();
+            setLocalSessions(prev => Array.from(new Set([...prev, clean])));
+            setBlockFilter(clean);
         }
     };
 
     const handleRenameSession = async () => {
-        if (blockFilter === 'Global' || blockFilter === 'Global (View All)') {
-            alert("Cannot rename your base 'Global' session.");
-            return;
-        }
+        if (blockFilter === 'Global' || blockFilter === 'Global (View All)') { alert("Cannot rename base sessions."); return; }
         const newName = window.prompt(`Rename session '${blockFilter}' to:`);
         if (newName && newName.trim() !== '') {
             const cleanName = newName.trim();
             const solvesToUpdate = allSolvesDb.filter(s => s.block === blockFilter);
-            for (const solve of solvesToUpdate) {
-                if (solve.id !== undefined) await db.solves.update(solve.id, { block: cleanName });
-            }
+            for (const solve of solvesToUpdate) { if (solve.id !== undefined) await db.solves.update(solve.id, { block: cleanName }); }
+            setLocalSessions(prev => [...prev.filter(s => s !== blockFilter), cleanName]);
             setBlockFilter(cleanName);
         }
     };
 
     const handleDeleteSession = async () => {
         if (blockFilter === 'Global' || blockFilter === 'Global (View All)') return;
-
-        const migrateToGlobal = window.confirm(`Do you want to MIGRATE all times from '${blockFilter}' into your 'Global' session before deleting?\n\nClick OK to MIGRATE.\nClick CANCEL to DELETE PERMANENTLY.`);
-
-        if (migrateToGlobal) {
+        if (window.confirm(`Do you want to MIGRATE all times from '${blockFilter}' into 'Global' before deleting?\nOK = MIGRATE.\nCANCEL = DELETE PERMANENTLY.`)) {
             const solvesToUpdate = allSolvesDb.filter(s => s.block === blockFilter);
-            for (const solve of solvesToUpdate) {
-                if (solve.id !== undefined) await db.solves.update(solve.id, { block: 'Global' });
-            }
-            alert(`Migrated ${solvesToUpdate.length} solves to Global and removed session.`);
+            for (const solve of solvesToUpdate) { if (solve.id !== undefined) await db.solves.update(solve.id, { block: 'Global' }); }
         } else {
-            const deletePermanently = window.confirm(`WARNING: You selected CANCEL. This means the session '${blockFilter}' and ALL ITS TIMES will be permanently DELETED. Proceed?`);
-            if (deletePermanently) {
+            if (window.confirm(`WARNING: Session '${blockFilter}' will be PERMANENTLY DELETED. Proceed?`)) {
                 const solvesToDelete = allSolvesDb.filter(s => s.block === blockFilter).map(s => s.id as number);
                 await db.solves.bulkDelete(solvesToDelete);
-                alert(`Session deleted permanently.`);
-            } else {
-                return;
-            }
+            } else return;
         }
+        setLocalSessions(prev => prev.filter(s => s !== blockFilter));
         setBlockFilter('Global');
     };
 
@@ -120,40 +98,39 @@ export default function App() {
     const [metrics, setMetrics] = useState<SessionMetricsData | null>(null);
     const [isCrunching, setIsCrunching] = useState(false);
     const [selectedRecord, setSelectedRecord] = useState<{ label: string, avg: string, solves: Solve[] } | null>(null);
-
     const [prs, setPrs] = useState<{ type: string; time: string; date: string; solves: Solve[]; }[]>([]);
     const [isCalculatingPrs, setIsCalculatingPrs] = useState(true);
 
-    const auditSolves = solves.filter(s => s.comment && s.comment.trim() !== '');
-    const auditParsed = {
-        CSP: {
-            good: auditSolves.filter(s => s.comment?.toLowerCase().includes('csp') && s.comment?.toLowerCase().match(/(good|correcto|bien|✓)/)).length,
-            bad: auditSolves.filter(s => s.comment?.toLowerCase().includes('csp') && s.comment?.toLowerCase().match(/(bad|error|mal|fail|x)/)).length
-        },
-        OBL: {
-            good: auditSolves.filter(s => s.comment?.toLowerCase().includes('obl') && s.comment?.toLowerCase().match(/(good|correcto|bien|✓)/)).length,
-            bad: auditSolves.filter(s => s.comment?.toLowerCase().includes('obl') && s.comment?.toLowerCase().match(/(bad|error|mal|fail|x)/)).length
-        },
-        PBL: {
-            good: auditSolves.filter(s => s.comment?.toLowerCase().includes('pbl') && s.comment?.toLowerCase().match(/(good|correcto|bien|✓)/)).length,
-            bad: auditSolves.filter(s => s.comment?.toLowerCase().includes('pbl') && s.comment?.toLowerCase().match(/(bad|error|mal|fail|x)/)).length
-        }
-    };
-
-    const savedCases = useLiveQuery(() => db.cases.toArray()) || [];
+    const savedCases = useLiveQuery(() => db.cases.toArray(), []) ?? [];
 
     const cspLearned = savedCases.filter(c => c.category === 'CSP' && c.status === 'Mastered').length;
-
     const masteredOBL = new Set(savedCases.filter(c => c.category === 'OBL' && c.status === 'Mastered').map(c => c.caseName));
     const oblLearned = Array.from(masteredOBL).filter(name => OBL_BASE_CASES.includes(name)).length;
-    const coLearned = Array.from(masteredOBL).filter(name => OBL_CO_CASES.includes(name)).length;
-    const eoLearned = Array.from(masteredOBL).filter(name => OBL_EO_CASES.includes(name)).length;
 
     const masteredPBL = new Set(savedCases.filter(c => c.category === 'PBL' && c.status === 'Mastered').map(c => c.caseName));
-    const npPblLearned = Array.from(masteredPBL).filter(name => NP_PBL_BASE_CASES.includes(name)).length;
-    const dpPblLearned = Array.from(masteredPBL).filter(name => DP_PBL_BASE_CASES.includes(name)).length;
-    const cpLearned = Array.from(masteredPBL).filter(name => PBL_CP_CASES.includes(name)).length;
-    const epLearned = Array.from(masteredPBL).filter(name => PBL_EP_CASES.includes(name)).length;
+    const pblLearned = Array.from(masteredPBL).filter(name => NP_PBL_BASE_CASES.includes(name) || DP_PBL_BASE_CASES.includes(name)).length;
+
+    const analyzeAudit = (solvesArray: Solve[]) => {
+        const getStats = (kw: string, useGoodBad: boolean) => {
+            const f = solvesArray.filter(s => s.comment && s.comment.toLowerCase().includes(kw));
+            const avg = f.length ? (f.reduce((a, b) => a + Number(b.time), 0) / f.length).toFixed(2) : '-';
+            let good = 0, bad = 0;
+            if (useGoodBad) {
+                good = f.filter(s => s.comment?.match(/(good|correcto|bien|✓)/i)).length;
+                bad = f.filter(s => s.comment?.match(/(bad|error|mal|fail|x)/i)).length;
+            }
+            const counts: Record<string, number> = {};
+            f.forEach(s => {
+                let clean = s.comment.replace(/\[|\]/g, '').replace(new RegExp(kw, 'i'), '').replace(/(good|bad|correcto|error|mal|fail|bien|x|✓)/gi, '').trim();
+                if (!clean || clean === '-' || clean === '/') clean = 'Unknown';
+                counts[clean] = (counts[clean] || 0) + 1;
+            });
+            const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+            return { total: f.length, avg, good, bad, top };
+        };
+        return { CSP: getStats('csp', true), OBL: getStats('obl', false), PBL: getStats('pbl', false) };
+    };
+    const auditParsed = analyzeAudit(solves);
 
     const calculateAvg = (times: number[], size: number): number => {
         if (times.length !== size) return Infinity;
@@ -164,7 +141,6 @@ export default function App() {
         return trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
     };
 
-    // 1. MÉTRICAS DINÁMICAS (Cambian según la sesión)
     useEffect(() => {
         let isMounted = true;
         const computeMetrics = async () => {
@@ -173,38 +149,42 @@ export default function App() {
             try {
                 if (isMounted) setIsCrunching(true);
                 const times = validSolves.map(s => Number(s.time));
-
                 const globalTrim = Math.ceil(times.length * 0.05);
                 const globalSorted = [...times].sort((a, b) => a - b);
                 const globalTrimmed = globalSorted.slice(globalTrim, times.length - globalTrim);
                 const globalAvgResult = globalTrimmed.length > 0 ? (globalTrimmed.reduce((a, b) => a + b, 0) / globalTrimmed.length).toFixed(2) : '-';
 
                 let bestSingleSolve = validSolves[0];
-                for (const solve of validSolves) {
-                    if (Number(solve.time) < Number(bestSingleSolve.time)) bestSingleSolve = solve;
-                }
+                for (const solve of validSolves) { if (Number(solve.time) < Number(bestSingleSolve.time)) bestSingleSolve = solve; }
 
-                const newMetrics: SessionMetricsData = {
-                    totalSolves: times.length, globalAvg: { result: globalAvgResult },
-                    single: { best: Number(bestSingleSolve.time).toFixed(2), solves: [bestSingleSolve] }
-                };
+                const newMetrics: SessionMetricsData = { totalSolves: times.length, globalAvg: { result: globalAvgResult }, single: { best: Number(bestSingleSolve.time).toFixed(2), solves: [bestSingleSolve] } };
 
-                const categories = [
-                    { label: 'mo3', size: 3 }, { label: 'ao5', size: 5 }, { label: 'ao12', size: 12 }, { label: 'ao50', size: 50 }, { label: 'ao100', size: 100 },
-                    { label: 'ao200', size: 200 }, { label: 'ao500', size: 500 }, { label: 'ao1000', size: 1000 }, { label: 'ao2000', size: 2000 }, { label: 'ao5000', size: 5000 }, { label: 'ao10000', size: 10000 }
-                ];
+                const prCategories = [3, 5, 12, 25, 50, 100];
+                const currentCategories = [200, 500, 1000, 2000, 5000, 10000];
 
-                for (const cat of categories) {
+                for (const size of prCategories) {
                     if (!isMounted) return;
-                    if (times.length < cat.size) { newMetrics[cat.label] = { best: '-', solves: [] }; continue; }
+                    if (times.length < size) { newMetrics[`ao${size}`] = { best: '-', solves: [] }; continue; }
                     let best = Infinity, bestWindow: Solve[] = [];
-                    for (let i = 0; i <= times.length - cat.size; i++) {
-                        const avg = calculateAvg(times.slice(i, i + cat.size), cat.size);
-                        if (avg < best) { best = avg; bestWindow = validSolves.slice(i, i + cat.size); }
-                        if (i % 300 === 0) { await new Promise(r => setTimeout(r, 0)); if (!isMounted) return; }
+                    for (let i = 0; i <= times.length - size; i++) {
+                        const avg = calculateAvg(times.slice(i, i + size), size);
+                        if (avg < best) { best = avg; bestWindow = validSolves.slice(i, i + size); }
+                        if (i % 500 === 0) { await new Promise(r => setTimeout(r, 0)); if (!isMounted) return; }
                     }
-                    newMetrics[cat.label] = { best: best === Infinity ? '-' : best.toFixed(2), solves: bestWindow };
+                    newMetrics[size === 3 ? 'mo3' : `ao${size}`] = { best: best === Infinity ? '-' : best.toFixed(2), solves: bestWindow };
                 }
+
+                for (const size of currentCategories) {
+                    if (times.length >= size) {
+                        const currentWindow = validSolves.slice(validSolves.length - size);
+                        const currentTimes = currentWindow.map(s => Number(s.time));
+                        const avg = calculateAvg(currentTimes, size);
+                        newMetrics[`ao${size}`] = { best: avg.toFixed(2), solves: currentWindow };
+                    } else {
+                        newMetrics[`ao${size}`] = { best: '-', solves: [] };
+                    }
+                }
+
                 if (isMounted) setMetrics(newMetrics);
             } catch (e) { console.error(e); } finally { if (isMounted) setIsCrunching(false); }
         };
@@ -212,7 +192,6 @@ export default function App() {
         return () => { isMounted = false; };
     }, [solves.length, blockFilter]);
 
-    // 2. ABSOLUTE PRs FIJOS (Leen toda la BD ignorando la sesión activa)
     useEffect(() => {
         let isMounted = true;
         const computePrs = async () => {
@@ -221,32 +200,24 @@ export default function App() {
             try {
                 if (isMounted) setIsCalculatingPrs(true);
                 const times = validSolves.map(s => Number(s.time));
-
                 let bestSingleSolve = validSolves[0];
-                for (const solve of validSolves) {
-                    if (Number(solve.time) < Number(bestSingleSolve.time)) bestSingleSolve = solve;
-                }
+                for (const solve of validSolves) { if (Number(solve.time) < Number(bestSingleSolve.time)) bestSingleSolve = solve; }
 
-                const categories = [3, 5, 12, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
+                const prCategories = [3, 5, 12, 25, 50, 100];
                 const records = [];
 
-                for (const size of categories) {
+                for (const size of prCategories) {
                     if (!isMounted) return;
                     if (times.length < size) continue;
                     let best = Infinity, bestWindow: Solve[] = [];
                     for (let i = 0; i <= times.length - size; i++) {
                         const avg = calculateAvg(times.slice(i, i + size), size);
                         if (avg < best) { best = avg; bestWindow = validSolves.slice(i, i + size); }
-                        if (i % 300 === 0) { await new Promise(r => setTimeout(r, 0)); if (!isMounted) return; }
+                        if (i % 500 === 0) { await new Promise(r => setTimeout(r, 0)); if (!isMounted) return; }
                     }
-                    if (best !== Infinity) {
-                        records.push({ type: size === 3 ? 'Mo3' : `Ao${size}`, time: best.toFixed(2), date: bestWindow[bestWindow.length - 1]?.dateStr || '', solves: bestWindow });
-                    }
+                    if (best !== Infinity) records.push({ type: size === 3 ? 'Mo3' : `Ao${size}`, time: best.toFixed(2), date: bestWindow[bestWindow.length - 1]?.dateStr || '', solves: bestWindow });
                 }
-                if (isMounted) {
-                    setPrs([{ type: 'Single', time: Number(bestSingleSolve.time).toFixed(2), date: bestSingleSolve.dateStr, solves: [bestSingleSolve] }, ...records]);
-                    setIsCalculatingPrs(false);
-                }
+                if (isMounted) { setPrs([{ type: 'Single', time: Number(bestSingleSolve.time).toFixed(2), date: bestSingleSolve.dateStr, solves: [bestSingleSolve] }, ...records]); setIsCalculatingPrs(false); }
             } catch (e) { console.error(e); }
         };
         computePrs();
@@ -266,33 +237,20 @@ export default function App() {
         if (!selectedRecord) return;
         const text = `SQ-1 ${selectedRecord.label}: ${selectedRecord.avg}s\n\n${selectedRecord.solves.map((s, i) => `${i + 1}. ${Number(s.time).toFixed(2)} - ${s.scramble}`).join('\n')}`;
         navigator.clipboard.writeText(text);
-        alert("Scrambles copied to clipboard! Ready to share.");
+        alert("Scrambles copied to clipboard!");
     };
 
     return (
         <div className="min-h-screen bg-gray-950 font-sans text-gray-100 selection:bg-blue-500/30">
             <header className="sticky top-0 z-20 border-b border-gray-800 bg-gray-950/80 backdrop-blur-md">
                 <div className="mx-auto flex max-w-7xl items-center justify-between p-4">
-
                     <div className="group flex cursor-pointer items-center gap-3" onClick={() => setViewMode('Dashboard')}>
-                        <img
-                            src="/logo.png"
-                            alt="SQ1 Logo"
-                            className="h-8 w-8 rounded-md object-contain transition-transform group-hover:scale-105"
-                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                        />
-                        <h1 className="text-xl font-black tracking-tight text-white transition group-hover:text-emerald-400">
-                            SQ-1 <span className="text-emerald-500">CORE ENGINE</span>
-                        </h1>
+                        <img src="/logo.png" alt="SQ1 Logo" className="h-8 w-8 rounded-md object-contain transition-transform group-hover:scale-105" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                        <h1 className="text-xl font-black tracking-tight text-white transition group-hover:text-emerald-400">SQ-1 <span className="text-emerald-500">CORE ENGINE</span></h1>
                     </div>
-
                     <nav className="custom-scrollbar flex gap-1 overflow-x-auto pb-1 md:pb-0">
                         {navItems.map((item) => (
-                            <button
-                                key={item.id}
-                                onClick={() => setViewMode(item.id as ViewModeType)}
-                                className={`flex whitespace-nowrap items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition ${viewMode === item.id ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:bg-gray-900 hover:text-gray-200'}`}
-                            >
+                            <button key={item.id} onClick={() => setViewMode(item.id as ViewModeType)} className={`flex whitespace-nowrap items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition ${viewMode === item.id ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:bg-gray-900 hover:text-gray-200'}`}>
                                 <item.icon className="h-4 w-4" /> <span className="hidden sm:inline">{item.label}</span>
                             </button>
                         ))}
@@ -305,68 +263,41 @@ export default function App() {
                     <div className="space-y-8">
                         <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
                             <div className="space-y-6 lg:col-span-1">
-                                <ImportForm />
 
-                                <div className="flex w-full items-center gap-3 rounded-xl border border-gray-800 bg-gray-900 p-4 shadow-xl">
+                                <div className="flex w-full items-center gap-3 rounded-xl border border-blue-900/30 bg-blue-950/10 p-5 shadow-xl">
                                     <div className="flex flex-1 flex-col">
                                         <div className="mb-2 flex items-center">
-                                            <span className="text-xs font-bold tracking-wider text-gray-400 uppercase">Active Session</span>
-                                            <Tooltip text="'Global' is your base session. You can create other sessions and freely delete them." />
+                                            <span className="text-xs font-bold tracking-wider text-blue-400 uppercase">Active Session</span>
                                         </div>
-                                        <div className="flex gap-2">
-                                            <select
-                                                value={blockFilter}
-                                                onChange={(e) => setBlockFilter(e.target.value)}
-                                                className="w-full cursor-pointer bg-black border border-gray-700 text-white text-sm font-bold rounded-lg p-2.5 outline-none focus:border-blue-500 transition hover:border-gray-500"
-                                            >
-                                                <option value="Global (View All)">[View All Sessions Mixed]</option>
-                                                <optgroup label="Your Sessions">
-                                                    {sessions.map(s => <option key={s} value={s}>{s}</option>)}
-                                                </optgroup>
-                                            </select>
-                                        </div>
+                                        <select value={blockFilter} onChange={(e) => setBlockFilter(e.target.value)} className="w-full cursor-pointer bg-black border border-gray-700 text-white text-sm font-bold rounded-lg p-2.5 outline-none focus:border-blue-500 transition hover:border-gray-500">
+                                            <option value="Global (View All)">[View All Sessions Mixed]</option>
+                                            <optgroup label="Your Sessions">{sessions.map(s => <option key={s} value={s}>{s}</option>)}</optgroup>
+                                        </select>
                                     </div>
                                     <div className="mt-6 flex flex-col gap-1">
-                                        <button onClick={handleCreateSession} title="New Session" className="flex items-center justify-center rounded-lg bg-blue-600 px-2 py-1.5 font-bold text-white transition hover:bg-blue-500">
-                                            <Plus className="h-4 w-4" />
-                                        </button>
+                                        <button onClick={handleCreateSession} title="New Session" className="flex items-center justify-center rounded-lg bg-blue-600 px-2 py-1.5 font-bold text-white transition hover:bg-blue-500"><Plus className="h-4 w-4" /></button>
                                         {blockFilter !== 'Global' && blockFilter !== 'Global (View All)' && (
                                             <div className="flex gap-1">
-                                                <button onClick={handleRenameSession} title="Rename Session" className="flex items-center justify-center rounded-lg bg-gray-800 px-2 py-1.5 text-gray-300 transition hover:bg-gray-700">
-                                                    <Pencil className="h-3 w-3" />
-                                                </button>
-                                                <button onClick={handleDeleteSession} title="Delete Session" className="flex items-center justify-center rounded-lg bg-red-900/50 px-2 py-1.5 text-white transition hover:bg-red-600">
-                                                    <Trash2 className="h-3 w-3" />
-                                                </button>
+                                                <button onClick={handleRenameSession} title="Rename" className="flex items-center justify-center rounded-lg bg-gray-800 px-2 py-1.5 text-gray-300 transition hover:bg-gray-700"><Pencil className="h-3 w-3" /></button>
+                                                <button onClick={handleDeleteSession} title="Delete" className="flex items-center justify-center rounded-lg bg-red-900/50 px-2 py-1.5 text-white transition hover:bg-red-600"><Trash2 className="h-3 w-3" /></button>
                                             </div>
                                         )}
                                     </div>
                                 </div>
 
-                                <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 shadow-xl">
-                                    <h3 className="mb-4 flex items-center text-sm font-bold tracking-wider text-gray-400 uppercase">
-                                        <BarChart3 className="mr-2 h-4 w-4 text-emerald-500" /> Algorithm Mastery
-                                    </h3>
+                                <ImportForm activeSession={blockFilter} />
 
-                                    <div className="space-y-4">
-                                        <div>
-                                            <div className="mb-2 border-b border-gray-800 pb-1 font-black tracking-widest text-[10px] text-gray-600 uppercase">CSP Module</div>
-                                            <ProgressBar label="CSP Overall" current={cspLearned} total={CSP_CASES.length} color="text-purple-400" bg="bg-purple-500" />
+                                <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 shadow-xl">
+                                    <h3 className="mb-4 flex items-center text-sm font-bold tracking-wider text-gray-400 uppercase"><BarChart3 className="mr-2 h-4 w-4 text-emerald-500" /> Mastery</h3>
+                                    <div className="space-y-3">
+                                        <div onClick={() => setViewMode('CSP')} className="cursor-pointer group p-2 -mx-2 rounded transition hover:bg-gray-800 border border-transparent hover:border-gray-700">
+                                            <ProgressBar label="CSP Module" current={cspLearned} total={CSP_CASES.length} color="text-purple-400" bg="bg-purple-500" />
                                         </div>
-
-                                        <div>
-                                            <div className="mb-2 border-b border-gray-800 pb-1 font-black tracking-widest text-[10px] text-gray-600 uppercase">5-Look Mod (Intermediate)</div>
-                                            <ProgressBar label="CO (Corner Orient.)" current={coLearned} total={OBL_CO_CASES.length} color="text-sky-400" bg="bg-sky-500" />
-                                            <ProgressBar label="EO (Edge Orient.)" current={eoLearned} total={OBL_EO_CASES.length} color="text-cyan-400" bg="bg-cyan-500" />
-                                            <ProgressBar label="CP (Corner Perm.)" current={cpLearned} total={PBL_CP_CASES.length} color="text-fuchsia-400" bg="bg-fuchsia-500" />
-                                            <ProgressBar label="EP (Edge Perm.)" current={epLearned} total={PBL_EP_CASES.length} color="text-purple-400" bg="bg-purple-500" />
+                                        <div onClick={() => setViewMode('OBL')} className="cursor-pointer group p-2 -mx-2 rounded transition hover:bg-gray-800 border border-transparent hover:border-gray-700">
+                                            <ProgressBar label="OBL Module (73)" current={oblLearned} total={73} color="text-blue-400" bg="bg-blue-500" />
                                         </div>
-
-                                        <div>
-                                            <div className="mb-2 border-b border-gray-800 pb-1 font-black tracking-widest text-[10px] text-gray-600 uppercase">3-Look Mod (Advanced)</div>
-                                            <ProgressBar label="OBL (Slices)" current={oblLearned} total={OBL_BASE_CASES.length} color="text-blue-400" bg="bg-blue-500" />
-                                            <ProgressBar label="NP PBL" current={npPblLearned} total={NP_PBL_BASE_CASES.length} color="text-pink-400" bg="bg-pink-500" />
-                                            <ProgressBar label="DP PBL" current={dpPblLearned} total={DP_PBL_BASE_CASES.length} color="text-rose-400" bg="bg-rose-500" />
+                                        <div onClick={() => setViewMode('PBL')} className="cursor-pointer group p-2 -mx-2 rounded transition hover:bg-gray-800 border border-transparent hover:border-gray-700">
+                                            <ProgressBar label="PBL Module (1934)" current={pblLearned} total={1934} color="text-pink-400" bg="bg-pink-500" />
                                         </div>
                                     </div>
                                 </div>
@@ -375,29 +306,15 @@ export default function App() {
                             <div className="space-y-8 lg:col-span-2">
                                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                                     <div className="relative min-h-[300px] rounded-xl border border-gray-800 bg-gray-900 p-6 shadow-xl">
-                                        <h3 className="mb-4 flex items-center text-sm font-bold tracking-wider text-gray-400 uppercase">
-                                            WCA Stats <span className="ml-1 text-gray-600">({solves.length} solves)</span>
-                                            <Tooltip text="Click on any average row to view the detailed list of solves and copy the scrambles." />
-                                        </h3>
-                                        {isCrunching ? (
-                                            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-xl bg-gray-900/80 backdrop-blur-sm">
-                                                <Loader2 className="mb-2 h-8 w-8 animate-spin text-blue-500" />
-                                                <span className="text-xs font-bold tracking-wider uppercase">Crunching Stats...</span>
-                                            </div>
-                                        ) : null}
+                                        <h3 className="mb-4 flex items-center text-sm font-bold tracking-wider text-gray-400 uppercase">WCA Stats <span className="ml-1 text-gray-600">({solves.length} solves)</span></h3>
+                                        {isCrunching ? <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-xl bg-gray-900/80 backdrop-blur-sm"><Loader2 className="mb-2 h-8 w-8 animate-spin text-blue-500" /></div> : null}
                                         {metrics ? (
                                             <div className="font-mono text-base">
                                                 <div className="grid grid-cols-2 gap-x-8 gap-y-2">
-                                                    {[
-                                                        { label: 'Single', data: metrics.single }, { label: 'Mo3', data: metrics.mo3 }, { label: 'Ao5', data: metrics.ao5 }, { label: 'Ao12', data: metrics.ao12 },
-                                                        { label: 'Ao50', data: metrics.ao50 }, { label: 'Ao100', data: metrics.ao100 }, { label: 'Ao200', data: metrics.ao200 }, { label: 'Ao500', data: metrics.ao500 },
-                                                        { label: 'Ao1000', data: metrics.ao1000 }, { label: 'Ao2000', data: metrics.ao2000 }, { label: 'Ao3000', data: metrics.ao3000 }, { label: 'Ao4000', data: metrics.ao4000 },
-                                                        { label: 'Ao5000', data: metrics.ao5000 }, { label: 'Ao10000', data: metrics.ao10000 }
-                                                    ].map(row => {
+                                                    {[{ label: 'Single', data: metrics.single }, { label: 'Mo3', data: metrics.mo3 }, { label: 'Ao5', data: metrics.ao5 }, { label: 'Ao12', data: metrics.ao12 }, { label: 'Ao25', data: metrics.ao25 }, { label: 'Ao50', data: metrics.ao50 }, { label: 'Ao100', data: metrics.ao100 }, { label: 'Ao200', data: metrics.ao200 }].map(row => {
                                                         if (!row.data || row.data.best === '-') return null;
-                                                        const handleOpenModal = () => { if (row.data) setSelectedRecord({ label: row.label, avg: row.data.best, solves: row.data.solves || [] }); };
                                                         return (
-                                                            <div key={row.label} onClick={handleOpenModal} className="group flex cursor-pointer items-center justify-between rounded border-b border-gray-800/30 px-2 py-1.5 transition hover:bg-gray-800/50">
+                                                            <div key={row.label} onClick={() => setSelectedRecord({ label: row.label, avg: row.data.best, solves: row.data.solves || [] })} className="group flex cursor-pointer items-center justify-between rounded border-b border-gray-800/30 px-2 py-1.5 transition hover:bg-gray-800/50">
                                                                 <span className="text-sm font-bold text-gray-400 transition group-hover:text-white">{row.label}</span>
                                                                 <span className="font-bold text-emerald-400">{row.data.best}s</span>
                                                             </div>
@@ -413,27 +330,26 @@ export default function App() {
                                     </div>
 
                                     <div className="h-fit rounded-xl border border-gray-800 bg-gray-900 p-6 shadow-xl">
-                                        <div className="mb-4 flex items-center justify-between">
-                                            <h3 className="flex items-center gap-2 text-sm font-bold tracking-wider text-gray-400 uppercase">
-                                                <ShieldAlert className="h-4 w-4 text-amber-500" /> Case Audit
-                                                <Tooltip text="Analyzes your timer comments to calculate success rates for specific cases (looks for 'CSP/OBL/PBL' and 'good/bad' in comments)." />
-                                            </h3>
-                                        </div>
-
+                                        <h3 className="mb-4 flex items-center gap-2 text-sm font-bold tracking-wider text-gray-400 uppercase"><ShieldAlert className="h-4 w-4 text-amber-500" /> Case Audit</h3>
                                         <div className="mb-4 flex rounded-lg border border-gray-800 bg-black p-1">
                                             {['CSP', 'OBL', 'PBL'].map(f => (
-                                                <button key={f} onClick={() => setAuditFilter(f as 'CSP' | 'OBL' | 'PBL')} className={`flex-1 py-1.5 text-xs font-bold rounded transition ${auditFilter === f ? 'bg-amber-600 text-white' : 'text-gray-500 hover:text-white'}`}>
-                                                    {f}
-                                                </button>
+                                                <button key={f} onClick={() => setAuditFilter(f as 'CSP' | 'OBL' | 'PBL')} className={`flex-1 py-1.5 text-xs font-bold rounded transition ${auditFilter === f ? 'bg-amber-600 text-white' : 'text-gray-500 hover:text-white'}`}>{f}</button>
                                             ))}
                                         </div>
-
-                                        <div className="space-y-2 rounded-lg border border-gray-800 bg-gray-950 p-4 font-mono text-xs text-gray-400">
-                                            <div className="flex items-center justify-between rounded border border-emerald-900/50 bg-emerald-950/30 p-2"><span className="text-emerald-500">Correct (Good)</span><span className="font-bold text-emerald-400">{auditParsed[auditFilter].good} solves</span></div>
-                                            <div className="flex items-center justify-between rounded border border-red-900/50 bg-red-950/30 p-2"><span className="text-red-500">Failed (Bad)</span><span className="font-bold text-red-400">{auditParsed[auditFilter].bad} solves</span></div>
-                                            <div className="mt-3 flex items-center justify-between border-t border-gray-800 pt-3">
-                                                <span className="text-gray-500">Total Analyzed</span>
-                                                <span className="font-bold text-white">{auditParsed[auditFilter].good + auditParsed[auditFilter].bad}</span>
+                                        <div className="space-y-3 rounded-lg border border-gray-800 bg-gray-950 p-4 font-mono text-xs text-gray-400">
+                                            <div className="flex items-center justify-between border-b border-gray-800 pb-2">
+                                                <span className="text-gray-500">Average Time</span>
+                                                <span className="text-lg font-bold text-yellow-400">{auditParsed[auditFilter].avg}s</span>
+                                            </div>
+                                            {auditFilter === 'CSP' && (
+                                                <div className="mb-2 flex gap-2">
+                                                    <div className="flex flex-1 justify-between rounded bg-emerald-950/30 p-2"><span className="text-emerald-500">Good</span><span className="font-bold text-emerald-400">{auditParsed.CSP.good}</span></div>
+                                                    <div className="flex flex-1 justify-between rounded bg-red-950/30 p-2"><span className="text-red-500">Failed</span><span className="font-bold text-red-400">{auditParsed.CSP.bad}</span></div>
+                                                </div>
+                                            )}
+                                            <div className="mt-2 space-y-1">
+                                                <div className="mb-1 tracking-widest text-[10px] text-gray-500 uppercase">Most Frequent Cases</div>
+                                                {auditParsed[auditFilter].top.length === 0 ? <span className="text-gray-600 italic">No cases recorded.</span> : auditParsed[auditFilter].top.map(t => <div key={t[0]} className="flex justify-between text-xs text-blue-400"><span>{t[0]}</span><span>{t[1]}x</span></div>)}
                                             </div>
                                         </div>
                                     </div>
@@ -445,10 +361,9 @@ export default function App() {
                         <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 shadow-xl">
                             <div className="mb-6 flex items-center justify-between">
                                 <h2 className="flex items-center gap-2 text-xl font-bold text-white"><Trophy className="text-yellow-500" /> Absolute Personal Records</h2>
-                                {!isCalculatingPrs && prs.length > 0 && <span className="flex items-center gap-1 rounded bg-emerald-900/30 px-2 py-1 font-bold tracking-wider text-[10px] text-emerald-500 uppercase"><Database className="h-3 w-3" /> Fixed</span>}
                             </div>
                             {isCalculatingPrs ? (
-                                <div className="flex flex-col items-center justify-center py-16 text-gray-400"><Loader2 className="mb-4 h-8 w-8 animate-spin text-blue-500" /><p className="mb-2 text-sm font-bold tracking-wider uppercase">Analyzing Big Data Set</p></div>
+                                <div className="flex flex-col items-center justify-center py-16 text-gray-400"><Loader2 className="mb-4 h-8 w-8 animate-spin text-blue-500" /></div>
                             ) : prs.length === 0 ? (
                                 <p className="text-sm text-gray-500 italic">No records found. Import data or enter solves manually.</p>
                             ) : (
@@ -482,20 +397,13 @@ export default function App() {
                                 <p className="mt-1 font-mono text-xs text-gray-500">From date: {selectedRecord.solves[selectedRecord.solves.length - 1]?.dateStr}</p>
                             </div>
                             <div className="flex gap-3">
-                                <button onClick={copyToClipboard} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-bold text-white transition hover:bg-blue-500">
-                                    <Copy className="h-4 w-4" /> <span className="hidden sm:inline">Copy Scrambles</span>
-                                </button>
-                                <button onClick={() => setSelectedRecord(null)} className="rounded-lg border border-gray-800 bg-gray-950 p-2 text-gray-500 transition hover:text-white">
-                                    <X className="h-5 w-5" />
-                                </button>
+                                <button onClick={copyToClipboard} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-bold text-white transition hover:bg-blue-500"><Copy className="h-4 w-4" /> <span className="hidden sm:inline">Copy Scrambles</span></button>
+                                <button onClick={() => setSelectedRecord(null)} className="rounded-lg border border-gray-800 bg-gray-950 p-2 text-gray-500 transition hover:text-white"><X className="h-5 w-5" /></button>
                             </div>
                         </div>
-
                         <div className="custom-scrollbar flex-1 space-y-2 overflow-y-auto p-6">
                             {selectedRecord.solves.length > 100 ? (
-                                <div className="flex h-32 items-center justify-center rounded-lg border border-gray-800 bg-gray-900">
-                                    <p className="font-bold text-yellow-500 italic">This average is too large to render the detailed list.</p>
-                                </div>
+                                <div className="flex h-32 items-center justify-center rounded-lg border border-gray-800 bg-gray-900"><p className="font-bold text-yellow-500 italic">This average is too large to render the detailed list.</p></div>
                             ) : (
                                 selectedRecord.solves.map((s, i) => (
                                     <div key={i} className="flex gap-4 rounded-lg border border-gray-800 bg-gray-900 p-3 font-mono text-sm transition hover:border-gray-600">
