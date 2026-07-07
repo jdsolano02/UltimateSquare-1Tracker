@@ -26,6 +26,7 @@ export interface SessionMetricsData {
     [key: string]: MetricStat | number | { result: string } | undefined;
 }
 
+
 const ProgressBar = ({ label, current, total, color, bg }: { label: string, current: number, total: number, color: string, bg: string }) => {
     const pct = total === 0 ? 0 : Math.round((current / total) * 100);
     return (
@@ -45,8 +46,12 @@ export default function App() {
     const [viewMode, setViewMode] = useState<ViewModeType>('Dashboard');
     const [blockFilter, setBlockFilter] = useState<BlockMode>('Global');
 
-    const allSolvesDb = useLiveQuery(() => db.solves.toArray(), []) ?? [];
-    const solves = blockFilter === 'Global (View All)' ? allSolvesDb : allSolvesDb.filter(s => s.block === blockFilter);
+    const allSolvesDb: (Solve & { id?: number })[] =
+        useLiveQuery(() => db.solves.toArray(), []) ?? [];
+
+    const solves = blockFilter === 'Global (View All)'
+        ? allSolvesDb
+        : allSolvesDb.filter(s => s.block === blockFilter);
 
     const [localSessions, setLocalSessions] = useState<string[]>(() => {
         const saved = localStorage.getItem('sq1_sessions');
@@ -121,7 +126,9 @@ export default function App() {
             }
             const counts: Record<string, number> = {};
             f.forEach(s => {
-                let clean = s.comment.replace(/\[|\]/g, '').replace(new RegExp(kw, 'i'), '').replace(/(good|bad|correcto|error|mal|fail|bien|x|✓)/gi, '').trim();
+                // TS FIX: Checkeamos que s.comment exista y lo usamos
+                const commentText = s.comment || '';
+                let clean = commentText.replace(/\[|\]/g, '').replace(new RegExp(kw, 'i'), '').replace(/(good|bad|correcto|error|mal|fail|bien|x|✓)/gi, '').trim();
                 if (!clean || clean === '-' || clean === '/') clean = 'Unknown';
                 counts[clean] = (counts[clean] || 0) + 1;
             });
@@ -313,8 +320,9 @@ export default function App() {
                                                 <div className="grid grid-cols-2 gap-x-8 gap-y-2">
                                                     {[{ label: 'Single', data: metrics.single }, { label: 'Mo3', data: metrics.mo3 }, { label: 'Ao5', data: metrics.ao5 }, { label: 'Ao12', data: metrics.ao12 }, { label: 'Ao25', data: metrics.ao25 }, { label: 'Ao50', data: metrics.ao50 }, { label: 'Ao100', data: metrics.ao100 }, { label: 'Ao200', data: metrics.ao200 }].map(row => {
                                                         if (!row.data || row.data.best === '-') return null;
+                                                        // TS FIX: Check for row.data safely
                                                         return (
-                                                            <div key={row.label} onClick={() => setSelectedRecord({ label: row.label, avg: row.data.best, solves: row.data.solves || [] })} className="group flex cursor-pointer items-center justify-between rounded border-b border-gray-800/30 px-2 py-1.5 transition hover:bg-gray-800/50">
+                                                            <div key={row.label} onClick={() => { if (row.data) setSelectedRecord({ label: row.label, avg: row.data.best, solves: row.data.solves || [] }); }} className="group flex cursor-pointer items-center justify-between rounded border-b border-gray-800/30 px-2 py-1.5 transition hover:bg-gray-800/50">
                                                                 <span className="text-sm font-bold text-gray-400 transition group-hover:text-white">{row.label}</span>
                                                                 <span className="font-bold text-emerald-400">{row.data.best}s</span>
                                                             </div>

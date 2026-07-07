@@ -106,7 +106,6 @@ export const DailyHistoryView = () => {
     const dailySolves = allSolves.filter(s => s.dateStr === selectedDate);
     const savedCases = useLiveQuery(() => db.cases.toArray()) || [];
 
-    // FIX: Variable renombrada correctamente a casesUpdatedToday
     const casesUpdatedToday = savedCases.filter(c => {
         const record = c as unknown as { dateUpdated?: string, status: string, category: string, caseName: string };
         return record.dateUpdated === selectedDate;
@@ -152,7 +151,9 @@ export const DailyHistoryView = () => {
             }
             const counts: Record<string, number> = {};
             f.forEach(s => {
-                let clean = s.comment.replace(/\[|\]/g, '').replace(new RegExp(kw, 'i'), '').replace(/(good|bad|correcto|error|mal|fail|bien|x|✓)/gi, '').trim();
+                // TS FIX: Checkeamos que el comment existe de forma segura
+                const commentText = s.comment || '';
+                let clean = commentText.replace(/\[|\]/g, '').replace(new RegExp(kw, 'i'), '').replace(/(good|bad|correcto|error|mal|fail|bien|x|✓)/gi, '').trim();
                 if (!clean || clean === '-' || clean === '/') clean = 'Unknown';
                 counts[clean] = (counts[clean] || 0) + 1;
             });

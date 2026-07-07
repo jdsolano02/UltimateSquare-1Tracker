@@ -1,120 +1,86 @@
-﻿import type { Solve } from '../../domain/entities/Solve';
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
+import type { Solve } from '../../domain/entities/Solve';
 
-// Calcula la Desviación Estándar Poblacional (σ)
-const calculateSigma = (arr: number[], mean: number): number => {
-    if (arr.length <= 1) return 0;
-    const variance = arr.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / arr.length;
-    return Math.sqrt(variance);
-};
-
-// Arithmetic Mean (mo) - No elimina tiempos
-export const calculateMean = (times: number[]) => {
-    if (times.length === 0) return { result: 0, sigma: 0 };
-    const sum = times.reduce((a, b) => a + b, 0);
-    const result = sum / times.length;
-    return { result, sigma: calculateSigma(times, result) };
-};
-
-// WCA Average (ao) - Elimina el 5% (techo) de arriba y abajo
 export const calculateWcaAverage = (times: number[]) => {
-    if (times.length < 3) return { result: 0, sigma: 0 };
-    const dropCount = Math.ceil(times.length * 0.05); // WCA 9f2
-    const sorted = [...times].sort((a, b) => a - b);
-    const trimmed = sorted.slice(dropCount, times.length - dropCount);
-    const sum = trimmed.reduce((a, b) => a + b, 0);
-    const result = sum / trimmed.length;
-    return { result, sigma: calculateSigma(trimmed, result) };
-};
-
-// Generador de Ventanas Deslizantes (Current vs Best)
-export interface MetricStats {
-    current: string;
-    currentSigma: string;
-    best: string;
-    bestSigma: string;
-}
-
-export const getWindowStats = (times: number[], size: number, type: 'mean' | 'avg'): MetricStats | null => {
-    if (times.length < size) return null;
-
-    const calcFn = type === 'mean' ? calculateMean : calculateWcaAverage;
-
-    // Cálculo Current (Últimos X solves)
-    const currentWindow = times.slice(-size);
-    const currentData = calcFn(currentWindow);
-
-    // Cálculo Best (Buscando la mejor ventana histórica)
-    let bestVal = Infinity;
-    let bestSigma = 0;
-
-    for (let i = 0; i <= times.length - size; i++) {
-        const window = times.slice(i, i + size);
-        const data = calcFn(window);
-        if (data.result < bestVal) {
-            bestVal = data.result;
-            bestSigma = data.sigma;
-        }
+    if (times.length === 0) return { result: 0 };
+    if (times.length < 3) {
+        return { result: times.reduce((a, b) => a + b, 0) / times.length };
     }
-
-    return {
-        current: currentData.result.toFixed(2),
-        currentSigma: currentData.sigma.toFixed(2),
-        best: bestVal.toFixed(2),
-        bestSigma: bestSigma.toFixed(2)
-    };
+    const trim = Math.ceil(times.length * 0.05);
+    const sorted = [...times].sort((a, b) => a - b);
+    const trimmed = sorted.slice(trim, times.length - trim);
+    return { result: trimmed.reduce((a, b) => a + b, 0) / trimmed.length };
 };
 
-/* --- MANTENER TUS FUNCIONES OBL Y FREQUENCY INTACTAS ABAJO --- */
-export interface OblLatency { caseName: string; averageTime: number; count: number; }
-export const getOBLPerformance = (solves: Solve[]): OblLatency[] => {
-    const groups: { [key: string]: number[] } = {};
-    solves.forEach(s => {
-        if (s.oblCase && !isNaN(s.time)) {
-            if (!groups[s.oblCase]) groups[s.oblCase] = [];
-            groups[s.oblCase].push(s.time);
-        }
-    });
-    return Object.keys(groups).map(caseName => {
-        const times = groups[caseName];
-        const sum = times.reduce((acc, t) => acc + t, 0);
-        return { caseName, averageTime: parseFloat((sum / times.length).toFixed(2)), count: times.length };
-    }).sort((a, b) => b.averageTime - a.averageTime);
-};
+export const calculateSessionStats = (solves: Solve[]) => {
+    // 1. Filtrado y parseo seguro a números
+    const validSolves = solves.filter(s => !isNaN(Number(s.time)) && Number(s.time) > 0);
+    const times = validSolves.map(s => Number(s.time));
 
-export interface FrequencyData { range: string; count: number; }
-export const getFrequencyDistribution = (solves: Solve[]): FrequencyData[] => {
-    const validSolves = solves.filter(s => !isNaN(s.time));
-    if (validSolves.length === 0) return [];
-    const times = validSolves.map(s => s.time);
+    if (times.length === 0) return null;
+
     const min = Math.floor(Math.min(...times));
     const max = Math.ceil(Math.max(...times));
-    const distribution: { [key: number]: number } = {};
-    for (let i = min; i <= max; i++) distribution[i] = 0;
-    times.forEach(t => { distribution[Math.floor(t)]++; });
-    return Object.keys(distribution).map(key => ({ range: `${key}s`, count: distribution[parseInt(key)] }));
-};
 
-// --- AUDITORÍA DE CASOS (OBL / CSP) ---
-export interface CaseAudit {
-    totalOBL: number;
-    totalCSP: number;
-    totalCombo: number;
-    avgOBL: string;
-    avgCSP: string;
-    avgCombo: string;
-}
+    // 2. Gráfico de Distribución
+    const distribution = new Array(max - min + 1).fill(0);
+    const labels = new Array(max - min + 1).fill('');
 
-export const getCaseAudit = (solves: Solve[]): CaseAudit => {
-    const onlyOBL = solves.filter(s => s.isObl && !s.isCsp && !isNaN(s.time));
-    const onlyCSP = solves.filter(s => s.isCsp && !s.isObl && !isNaN(s.time));
-    const combo = solves.filter(s => s.isObl && s.isCsp && !isNaN(s.time));
+    times.forEach(t => {
+        const idx = Math.floor(t) - min;
+        if (idx >= 0 && idx < distribution.length) {
+            distribution[idx]++;
+        }
+    });
 
+    for (let i = 0; i < labels.length; i++) {
+        labels[i] = `${min + i}s`;
+    }
+
+    // 3. Agrupación por casos específicos (OBL / CSP)
+    const groups: Record<string, number[]> = {};
+    validSolves.forEach(s => {
+        // Leemos propiedades de forma segura en caso de que existan en la entidad
+        const solveAny = s as any;
+        const caseName = solveAny.oblCase || solveAny.cspCase;
+
+        if (caseName) {
+            if (!groups[caseName]) groups[caseName] = [];
+            groups[caseName].push(Number(s.time));
+        }
+    });
+
+    // 4. Performance de Sub-categorías
+    const onlyOBL = validSolves.filter(s => {
+        const isObl = (s as any).isObl || s.comment?.toLowerCase().includes('obl');
+        const isCsp = (s as any).isCsp || s.comment?.toLowerCase().includes('csp');
+        return isObl && !isCsp;
+    });
+
+    const onlyCSP = validSolves.filter(s => {
+        const isObl = (s as any).isObl || s.comment?.toLowerCase().includes('obl');
+        const isCsp = (s as any).isCsp || s.comment?.toLowerCase().includes('csp');
+        return isCsp && !isObl;
+    });
+
+    const combo = validSolves.filter(s => {
+        const isObl = (s as any).isObl || s.comment?.toLowerCase().includes('obl');
+        const isCsp = (s as any).isCsp || s.comment?.toLowerCase().includes('csp');
+        return isObl && isCsp;
+    });
+
+    // 5. Retorno estructurado para el Dashboard
     return {
-        totalOBL: onlyOBL.length,
-        totalCSP: onlyCSP.length,
-        totalCombo: combo.length,
-        avgOBL: calculateWcaAverage(onlyOBL.map(s => s.time)).result.toFixed(2),
-        avgCSP: calculateWcaAverage(onlyCSP.map(s => s.time)).result.toFixed(2),
-        avgCombo: calculateWcaAverage(combo.map(s => s.time)).result.toFixed(2),
+        total: times.length,
+        min,
+        max,
+        distribution,
+        labels,
+        groups,
+        performance: {
+            avgOBL: calculateWcaAverage(onlyOBL.map(s => Number(s.time))).result.toFixed(2),
+            avgCSP: calculateWcaAverage(onlyCSP.map(s => Number(s.time))).result.toFixed(2),
+            avgCombo: calculateWcaAverage(combo.map(s => Number(s.time))).result.toFixed(2),
+        },
     };
 };
