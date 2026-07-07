@@ -1,57 +1,24 @@
-// --- OBL CASES ---
-
-export const OBL_BY_PRIORITY = [
-    { priority: 0, title: "Priority 0: Base & Fundamental", cases: ["copp/copp", "line/line", "cadj/cadj", "4e/4e", "L/L", "1c/1c", "cadj/copp", "3c/3c", "3e/3e", "L/line", "1e/1e"] },
-    { priority: 1, title: "Priority 1: Pair Closing", cases: ["good arrow/arrow", "bad arrow/arrow", "good arrow/pair", "bad arrow/pair", "good kite/cut", "bad kite/cut", "good kite/N", "bad kite/N", "good thumb/thumb", "bad thumb/thumb", "good cut/cut", "bad cut/cut", "good knight/axe", "bad knight/axe"] },
-    { priority: 2, title: "Priority 2: Mastered Pairs", cases: ["good kite/kite", "bad kite/kite", "good pair/pair", "bad pair/pair", "good N/N", "bad N/N"] },
-    { priority: 3, title: "Priority 3: New Direct Pairs", cases: ["good bird/bird", "bad bird/bird", "good thumb/bunny", "bad thumb/bunny", "good yoshi/bird", "bad yoshi/bird", "good T/T", "bad T/T", "good tie/tie", "bad tie/tie", "good cut/N", "bad cut/N", "good T/tie", "bad T/tie", "same yoshi/yoshi", "diff yoshi/yoshi", "good bunny/bunny", "bad bunny/bunny", "same axe/axe", "diff axe/axe", "good knight/knight", "bad knight/knight"] },
-    { priority: 4, title: "Priority 4: Mixed & Complex", cases: ["gem/axe", "squid/axe", "kite/T", "kite/tie", "cut/T", "cut/tie", "T/N", "tie/N", "hazard/hazard", "yoshi/hazard", "shell/shell", "yoshi/shell", "shell/bird", "bird/hazard", "shell/hazard", "squid/squid", "squid/knight", "gem/squid", "gem/knight", "gem/gem"] }
-];
-
+// --- OBL CASES (3-Look) ---
 export const OBL_BY_SLICES = [
-    {
-        category: "Base / Fast Cases",
-        cases: ["line/line", "4e/4e", "L/L", "3e/3e", "L/line", "1e/1e"]
-    },
-    {
-        category: "1 Slicer",
-        cases: ["good kite/kite"]
-    },
-    {
-        category: "2 Slicers",
-        cases: ["copp/copp", "good pair/pair", "good thumb/thumb", "good N/N"]
-    },
-    {
-        category: "3 Slicers",
-        cases: ["good arrow/pair", "good arrow/arrow", "bad arrow/arrow", "gem/axe", "good knight/axe", "good bunny/bunny", "yoshi/shell", "good yoshi/bird", "good kite/cut", "good kite/N", "good T/T", "good cut/cut", "good tie/tie", "bad tie/tie", "good T/tie"]
-    },
-    {
-        category: "4 Slicers",
-        cases: ["cadj/cadj", "bad pair/pair", "bad arrow/pair", "gem/gem", "gem/knight", "gem/squid", "good knight/knight", "bad knight/knight", "squid/knight", "squid/axe", "good thumb/bunny", "bad thumb/bunny", "shell/shell", "shell/bird", "shell/hazard", "good bird/bird", "bad bird/bird", "bird/hazard", "yoshi/hazard", "kite/T", "bad kite/N", "kite/tie", "cut/T", "good cut/N", "bad cut/N", "cut/tie", "bad knight/axe", "bad T/tie", "bad T/T"]
-    },
-    {
-        category: "5 Slicers",
-        cases: ["1c/1c", "3c/3c", "cadj/copp", "squid/squid", "hazard/hazard", "bad thumb/thumb", "bad kite/kite", "T/N", "tie/N", "bad yoshi/bird", "same yoshi/yoshi", "diff yoshi/yoshi", "same axe/axe", "diff axe/axe", "bad bunny/bunny", "bad N/N"]
-    },
-    {
-        category: "6 Slicers",
-        cases: ["bad kite/cut", "bad cut/cut"]
-    }
+    { category: "Base / Fast Cases", cases: ["line/line", "4e/4e", "L/L", "3e/3e", "L/line", "1e/1e"] },
+    { category: "1 Slicer", cases: ["good kite/kite"] },
+    { category: "2 Slicers", cases: ["copp/copp", "good pair/pair", "good thumb/thumb", "good N/N"] },
+    { category: "3 Slicers", cases: ["good arrow/pair", "good arrow/arrow", "bad arrow/arrow", "gem/axe", "good knight/axe", "good bunny/bunny", "yoshi/shell", "good yoshi/bird", "good kite/cut", "good kite/N", "good T/T", "good cut/cut", "good tie/tie", "bad tie/tie", "good T/tie"] },
+    { category: "4 Slicers", cases: ["cadj/cadj", "bad pair/pair", "bad arrow/pair", "gem/gem", "gem/knight", "gem/squid", "good knight/knight", "bad knight/knight", "squid/knight", "squid/axe", "good thumb/bunny", "bad thumb/bunny", "shell/shell", "shell/bird", "shell/hazard", "good bird/bird", "bad bird/bird", "bird/hazard", "yoshi/hazard", "kite/T", "bad kite/N", "kite/tie", "cut/T", "good cut/N", "bad cut/N", "cut/tie", "bad knight/axe", "bad T/tie", "bad T/T"] },
+    { category: "5 Slicers", cases: ["1c/1c", "3c/3c", "cadj/copp", "squid/squid", "hazard/hazard", "bad thumb/thumb", "bad kite/kite", "T/N", "tie/N", "bad yoshi/bird", "same yoshi/yoshi", "diff yoshi/yoshi", "same axe/axe", "diff axe/axe", "bad bunny/bunny", "bad N/N"] },
+    { category: "6 Slicers", cases: ["bad kite/cut", "bad cut/cut"] }
 ];
 
-// --- EP CASES ---
+export const OBL_BASE_CASES = OBL_BY_SLICES.flatMap(g => g.cases);
 
-export const EP_CASES = [
-    { category: "Base Cases", cases: ["Adj/Adj", "Opp/Opp", "Ul/Ur (good UU)", "Ur/Ul (good UU)", "Ul/Ul (bad UU)", "Ur/Ur (bad UU)"] },
-    { category: "Using Adj/Adj", cases: ["Z/Z", "Ur/-", "Ul/-", "-/Ur", "-/Ul", "U/Z", "Z/U"] },
-    { category: "Using M2s", cases: ["Z/-", "-/Z", "O/Opp", "Opp/O", "O/O", "Z/H", "H/Z", "H/-", "-/H"] },
-    { category: "Using 2 CP Algs", cases: ["U/H", "H/U", "H/H"] },
-    { category: "Using Good UU", cases: ["Adj/O", "O/Adj", "W/O", "O/W", "W/Opp", "Opp/W", "W/Adj", "Adj/W", "W/W"] },
-    { category: "Other", cases: ["Adj/Opp", "Opp/Adj"] }
-];
+// --- CO & EO CASES (5-Look) ---
+export const OBL_CO_CASES = ["1c/1c", "C-opp/C-opp", "C-adj/C-adj", "C-opp/C-adj", "C-adj/C-opp", "3c/3c", "4c/4c"];
+export const OBL_EO_CASES = ["1e/1e", "E-opp/E-opp", "E-adj/E-adj", "E-adj/E-opp", "E-opp/E-adj", "3e/3e", "4e/4e"];
+
+export const ALL_OBL_CASES = Array.from(new Set([...OBL_BASE_CASES, ...OBL_CO_CASES, ...OBL_EO_CASES]));
+
 
 // --- CSP CASES ---
-
 export const CSP_CASES = [
     { name: "Left 4-2 / Paired Edges", prob: 2.61 }, { name: "Right 4-2 / Paired Edges", prob: 2.61 }, { name: "4-1-1 / Paired Edges", prob: 2.61 },
     { name: "6 / Paired Edges", prob: 1.96 }, { name: "3-3 / Paired Edges", prob: 1.96 }, { name: "Left 5-1 / Paired Edges", prob: 1.96 },
@@ -84,3 +51,44 @@ export const CSP_CASES = [
     { name: "6-2 / Star", prob: 0.44 }, { name: "5-3 / Star", prob: 0.44 }, { name: "7-1 / Star", prob: 0.44 },
     { name: "4-4 / Star", prob: 0.27 }, { name: "2-2-2 / Parallel Edges", prob: 0.22 }, { name: "Square / Square", prob: 0.11 }
 ];
+
+
+// --- PBL CASES (3-Look) ---
+// Separamos los 44 PLLs en Pares (Even) e Impares (Odd)
+const EVEN_PLLS = ['Al', 'Ar', 'E', 'F', 'Gal', 'Gar', 'Gol', 'Gor', 'H', 'Ja', 'Jm', 'Na', 'Nm', 'Rr', 'Rl', 'T', 'Ur', 'Ul', 'V', 'Y', 'Z', '-'];
+const ODD_PLLS = ['adj', 'Ba', 'Bm', 'Cr', 'Cl', 'Da', 'Dm', 'Ka', 'Km', 'M', 'Or', 'Ol', 'opp', 'Pr', 'Pl', 'pJ', 'pN', 'Q', 'Sa', 'Sm', 'W', 'X'];
+
+// NP PBL = (Even Top x Even Bottom) + (Odd Top x Odd Bottom) -> 968 Casos
+export const NP_PBL_CASES = [
+    ...EVEN_PLLS.map(top => ({ category: `[NP] ${top} Top`, cases: EVEN_PLLS.map(bot => `${top}/${bot}`) })),
+    ...ODD_PLLS.map(top => ({ category: `[NP] ${top} Top`, cases: ODD_PLLS.map(bot => `${top}/${bot}`) }))
+];
+
+// DP PBL = (Even Top x Odd Bottom) + (Odd Top x Even Bottom) -> 968 Casos
+export const DP_PBL_CASES = [
+    ...EVEN_PLLS.map(top => ({ category: `[DP] ${top} Top`, cases: ODD_PLLS.map(bot => `${top}/${bot}`) })),
+    ...ODD_PLLS.map(top => ({ category: `[DP] ${top} Top`, cases: EVEN_PLLS.map(bot => `${top}/${bot}`) }))
+];
+
+export const NP_PBL_BASE_CASES = NP_PBL_CASES.flatMap(g => g.cases);
+export const DP_PBL_BASE_CASES = DP_PBL_CASES.flatMap(g => g.cases);
+
+
+// --- CP & EP CASES (5-Look) ---
+export const PBL_CP_CASES = ["J/-", "-/J", "J/J", "J/N", "N/J", "N/-", "-/N", "N/N"];
+
+export const PBL_EP_CASES = [
+    "H/-", "H/H", "H/Ul", "H/Ur", "H/Z", "Z/-", "Z/H", "Z/Ul", "Z/Ur", "Z/Z",
+    "Ul/-", "Ur/-", "Ul/H", "Ur/H", "Ul/Ul", "Ul/Ur", "Ur/Ul", "Ur/Ur", "Ul/Z", "Ur/Z",
+    "-/H", "-/Ul", "-/Ur", "-/Z", "W/adj", "W/Ol", "W/Or", "W/opp", "W/W",
+    "Ol/adj", "Or/adj", "Ol/Ol", "Ol/Or", "Or/Ol", "Or/Or", "Ol/opp", "Or/opp", "Ol/W", "Or/W",
+    "adj/adj", "adj/Ol", "adj/Or", "adj/opp", "adj/W", "opp/adj", "opp/Ol", "opp/Or", "opp/opp", "opp/W"
+];
+
+// Se unifican evitando duplicados estrictos. Como no hay prefijos, EP y CP que coincidan con NP se absorberán solos en el Set.
+export const ALL_PBL_CASES = Array.from(new Set([
+    ...NP_PBL_BASE_CASES,
+    ...DP_PBL_BASE_CASES,
+    ...PBL_CP_CASES,
+    ...PBL_EP_CASES
+]));

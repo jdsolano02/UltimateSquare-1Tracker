@@ -32,7 +32,7 @@ export const DailyTracker = ({ selectedDate }: { selectedDate: string }) => {
         return () => { isMounted = false; };
     }, [selectedDate]);
 
-    const addCase = (category: 'OBL' | 'CSP' | 'EP') => {
+    const addCase = (category: 'OBL' | 'CSP' | 'PBL') => {
         setLog(prev => ({
             ...prev,
             labCases: [...(prev.labCases || []), { category, caseName: '', state: 'Learning', notes: '' }]
@@ -105,7 +105,7 @@ export const DailyTracker = ({ selectedDate }: { selectedDate: string }) => {
                     <div className="flex gap-2">
                         <button onClick={() => addCase('OBL')} className="text-[10px] font-bold bg-blue-900/30 text-blue-400 px-2 py-1 rounded border border-blue-800/50 hover:bg-blue-900/60">+ OBL</button>
                         <button onClick={() => addCase('CSP')} className="text-[10px] font-bold bg-purple-900/30 text-purple-400 px-2 py-1 rounded border border-purple-800/50 hover:bg-purple-900/60">+ CSP</button>
-                        <button onClick={() => addCase('EP')} className="text-[10px] font-bold bg-amber-900/30 text-amber-400 px-2 py-1 rounded border border-amber-800/50 hover:bg-amber-900/60">+ EP</button>
+                        <button onClick={() => addCase('PBL')} className="text-[10px] font-bold bg-amber-900/30 text-amber-400 px-2 py-1 rounded border border-amber-800/50 hover:bg-amber-900/60">+ EP</button>
                     </div>
                 </div>
 
