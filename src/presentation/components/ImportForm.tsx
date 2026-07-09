@@ -3,6 +3,14 @@ import { db } from '../../infrastructure/database/db';
 import { parseCsTimerExport } from '../../infrastructure/parsers/CsTimerParser';
 import { CheckCircle, FileUp, Loader2, Database } from 'lucide-react';
 
+// Función auxiliar para forzar la fecha local correcta compensando el UTC
+const fixTimezoneOffset = (timestamp: number | string | Date | undefined): string => {
+    // Si el parser extrajo el timestamp original, lo usamos; si no, usamos el momento actual.
+    const d = timestamp ? new Date(timestamp) : new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().split('T')[0];
+};
+
 export const ImportForm = ({ activeSession }: { activeSession: string }) => {
     const [status, setStatus] = useState<{ count: number } | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -28,6 +36,12 @@ export const ImportForm = ({ activeSession }: { activeSession: string }) => {
 
                 let addedCount = 0;
                 for (const solve of parsedSolves) {
+
+                    // FIX: Aplicamos el parche de huso horario para evitar saltos de día.
+                    // Esto sobrescribe la fecha generada por CsTimerParser con la fecha local exacta.
+                    const localDateStr = fixTimezoneOffset(solve.date);
+                    solve.dateStr = localDateStr;
+
                     // Check duplicate ONLY in the target session
                     const isDuplicate = await db.solves
                         .where({ dateStr: solve.dateStr, scramble: solve.scramble })

@@ -151,9 +151,25 @@ export const DailyHistoryView = () => {
             }
             const counts: Record<string, number> = {};
             f.forEach(s => {
-                // TS FIX: Checkeamos que el comment existe de forma segura
-                const commentText = s.comment || '';
-                let clean = commentText.replace(/\[|\]/g, '').replace(new RegExp(kw, 'i'), '').replace(/(good|bad|correcto|error|mal|fail|bien|x|✓)/gi, '').trim();
+                let commentText = s.comment || '';
+
+                // Dividir combinaciones tipo "Good CSP + OBL Good Pair/Pair"
+                if (commentText.includes('+')) {
+                    const parts = commentText.split('+');
+                    const relevantPart = parts.find(p => p.toLowerCase().includes(kw));
+                    if (relevantPart) commentText = relevantPart;
+                }
+
+                let clean = commentText.replace(/\[|\]/g, '').replace(new RegExp(kw, 'i'), '');
+
+                if (useGoodBad) {
+                    clean = clean.replace(/(good|bad|correcto|error|mal|fail|bien|x|✓)/gi, '');
+                } else {
+                    // Para OBL y PBL NO borramos good/bad (ej. "Good Pair/Pair")
+                    clean = clean.replace(/(correcto|error|mal|fail|bien|x|✓)/gi, '');
+                }
+
+                clean = clean.trim();
                 if (!clean || clean === '-' || clean === '/') clean = 'Unknown';
                 counts[clean] = (counts[clean] || 0) + 1;
             });

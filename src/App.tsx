@@ -10,12 +10,12 @@ import {
     OBL_BASE_CASES, CSP_CASES,
     NP_PBL_BASE_CASES, DP_PBL_BASE_CASES
 } from './domain/constants/cases';
-import { LayoutDashboard, CalendarClock, Target, Database, BookOpenText, ShieldAlert, BarChart3, X, Loader2, Copy, Grid3X3, Plus, Pencil, Trash2, Trophy } from 'lucide-react';
+import { LayoutDashboard, CalendarClock, Target, Database, BookOpenText, ShieldAlert, BarChart3, X, Loader2, Copy, Grid3X3, Plus, Pencil, Trash2, Trophy, RotateCcw } from 'lucide-react';
 import type { Solve } from './domain/entities/Solve';
 
 export type BlockMode = 'Global (View All)' | 'Global' | string;
 export type ViewModeType = 'Dashboard' | 'Daily' | 'CSP' | 'OBL' | 'PBL' | 'Historical';
-export interface MetricStat { best: string; solves: Solve[]; }
+export interface MetricStat { best: string; current?: string; solves: Solve[]; }
 
 export interface SessionMetricsData {
     totalSolves: number;
@@ -25,7 +25,6 @@ export interface SessionMetricsData {
     ao2000?: MetricStat; ao5000?: MetricStat; ao10000?: MetricStat;
     [key: string]: MetricStat | number | { result: string } | undefined;
 }
-
 
 const ProgressBar = ({ label, current, total, color, bg }: { label: string, current: number, total: number, color: string, bg: string }) => {
     const pct = total === 0 ? 0 : Math.round((current / total) * 100);
@@ -84,6 +83,17 @@ export default function App() {
         }
     };
 
+    const handleResetSession = async () => {
+        if (blockFilter === 'Global (View All)') {
+            alert("Cannot reset 'View All'. Please select a specific session.");
+            return;
+        }
+        if (window.confirm(`Are you sure you want to RESET '${blockFilter}'?\nAll solves in this session will be permanently deleted, but the session itself will remain open.`)) {
+            const solvesToDelete = allSolvesDb.filter(s => s.block === blockFilter).map(s => s.id as number);
+            await db.solves.bulkDelete(solvesToDelete);
+        }
+    };
+
     const handleDeleteSession = async () => {
         if (blockFilter === 'Global' || blockFilter === 'Global (View All)') return;
         if (window.confirm(`Do you want to MIGRATE all times from '${blockFilter}' into 'Global' before deleting?\nOK = MIGRATE.\nCANCEL = DELETE PERMANENTLY.`)) {
@@ -126,9 +136,25 @@ export default function App() {
             }
             const counts: Record<string, number> = {};
             f.forEach(s => {
-                // TS FIX: Checkeamos que s.comment exista y lo usamos
-                const commentText = s.comment || '';
-                let clean = commentText.replace(/\[|\]/g, '').replace(new RegExp(kw, 'i'), '').replace(/(good|bad|correcto|error|mal|fail|bien|x|✓)/gi, '').trim();
+                let commentText = s.comment || '';
+
+                // Dividir combinaciones tipo "Good CSP + OBL Good Pair/Pair"
+                if (commentText.includes('+')) {
+                    const parts = commentText.split('+');
+                    const relevantPart = parts.find(p => p.toLowerCase().includes(kw));
+                    if (relevantPart) commentText = relevantPart;
+                }
+
+                let clean = commentText.replace(/\[|\]/g, '').replace(new RegExp(kw, 'i'), '');
+
+                if (useGoodBad) {
+                    clean = clean.replace(/(good|bad|correcto|error|mal|fail|bien|x|✓)/gi, '');
+                } else {
+                    // Para OBL y PBL NO borramos good/bad (ej. "Good Pair/Pair")
+                    clean = clean.replace(/(correcto|error|mal|fail|bien|x|✓)/gi, '');
+                }
+
+                clean = clean.trim();
                 if (!clean || clean === '-' || clean === '/') clean = 'Unknown';
                 counts[clean] = (counts[clean] || 0) + 1;
             });
@@ -171,14 +197,26 @@ export default function App() {
 
                 for (const size of prCategories) {
                     if (!isMounted) return;
-                    if (times.length < size) { newMetrics[`ao${size}`] = { best: '-', solves: [] }; continue; }
+                    if (times.length < size) { newMetrics[`ao${size}`] = { best: '-', current: '-', solves: [] }; continue; }
+
+                    // Calcular el BEST
                     let best = Infinity, bestWindow: Solve[] = [];
                     for (let i = 0; i <= times.length - size; i++) {
                         const avg = calculateAvg(times.slice(i, i + size), size);
                         if (avg < best) { best = avg; bestWindow = validSolves.slice(i, i + size); }
                         if (i % 500 === 0) { await new Promise(r => setTimeout(r, 0)); if (!isMounted) return; }
                     }
-                    newMetrics[size === 3 ? 'mo3' : `ao${size}`] = { best: best === Infinity ? '-' : best.toFixed(2), solves: bestWindow };
+
+                    // Calcular el CURRENT
+                    const currentWindow = validSolves.slice(validSolves.length - size);
+                    const currentTimes = currentWindow.map(s => Number(s.time));
+                    const currentAvg = calculateAvg(currentTimes, size);
+
+                    newMetrics[size === 3 ? 'mo3' : `ao${size}`] = {
+                        best: best === Infinity ? '-' : best.toFixed(2),
+                        current: currentAvg === Infinity ? '-' : currentAvg.toFixed(2),
+                        solves: bestWindow
+                    };
                 }
 
                 for (const size of currentCategories) {
@@ -186,9 +224,9 @@ export default function App() {
                         const currentWindow = validSolves.slice(validSolves.length - size);
                         const currentTimes = currentWindow.map(s => Number(s.time));
                         const avg = calculateAvg(currentTimes, size);
-                        newMetrics[`ao${size}`] = { best: avg.toFixed(2), solves: currentWindow };
+                        newMetrics[`ao${size}`] = { best: avg.toFixed(2), current: avg.toFixed(2), solves: currentWindow };
                     } else {
-                        newMetrics[`ao${size}`] = { best: '-', solves: [] };
+                        newMetrics[`ao${size}`] = { best: '-', current: '-', solves: [] };
                     }
                 }
 
@@ -283,10 +321,15 @@ export default function App() {
                                     </div>
                                     <div className="mt-6 flex flex-col gap-1">
                                         <button onClick={handleCreateSession} title="New Session" className="flex items-center justify-center rounded-lg bg-blue-600 px-2 py-1.5 font-bold text-white transition hover:bg-blue-500"><Plus className="h-4 w-4" /></button>
-                                        {blockFilter !== 'Global' && blockFilter !== 'Global (View All)' && (
+                                        {blockFilter !== 'Global (View All)' && (
                                             <div className="flex gap-1">
-                                                <button onClick={handleRenameSession} title="Rename" className="flex items-center justify-center rounded-lg bg-gray-800 px-2 py-1.5 text-gray-300 transition hover:bg-gray-700"><Pencil className="h-3 w-3" /></button>
-                                                <button onClick={handleDeleteSession} title="Delete" className="flex items-center justify-center rounded-lg bg-red-900/50 px-2 py-1.5 text-white transition hover:bg-red-600"><Trash2 className="h-3 w-3" /></button>
+                                                {blockFilter !== 'Global' && (
+                                                    <button onClick={handleRenameSession} title="Rename" className="flex flex-1 items-center justify-center rounded-lg bg-gray-800 px-2 py-1.5 text-gray-300 transition hover:bg-gray-700"><Pencil className="h-3 w-3" /></button>
+                                                )}
+                                                <button onClick={handleResetSession} title="Reset Session (Clear all times)" className="flex flex-1 items-center justify-center rounded-lg bg-amber-900/40 px-2 py-1.5 text-amber-500 transition hover:bg-amber-600 hover:text-white"><RotateCcw className="h-3 w-3" /></button>
+                                                {blockFilter !== 'Global' && (
+                                                    <button onClick={handleDeleteSession} title="Delete Session" className="flex flex-1 items-center justify-center rounded-lg bg-red-900/50 px-2 py-1.5 text-white transition hover:bg-red-600"><Trash2 className="h-3 w-3" /></button>
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -320,11 +363,15 @@ export default function App() {
                                                 <div className="grid grid-cols-2 gap-x-8 gap-y-2">
                                                     {[{ label: 'Single', data: metrics.single }, { label: 'Mo3', data: metrics.mo3 }, { label: 'Ao5', data: metrics.ao5 }, { label: 'Ao12', data: metrics.ao12 }, { label: 'Ao25', data: metrics.ao25 }, { label: 'Ao50', data: metrics.ao50 }, { label: 'Ao100', data: metrics.ao100 }, { label: 'Ao200', data: metrics.ao200 }].map(row => {
                                                         if (!row.data || row.data.best === '-') return null;
-                                                        // TS FIX: Check for row.data safely
                                                         return (
                                                             <div key={row.label} onClick={() => { if (row.data) setSelectedRecord({ label: row.label, avg: row.data.best, solves: row.data.solves || [] }); }} className="group flex cursor-pointer items-center justify-between rounded border-b border-gray-800/30 px-2 py-1.5 transition hover:bg-gray-800/50">
                                                                 <span className="text-sm font-bold text-gray-400 transition group-hover:text-white">{row.label}</span>
-                                                                <span className="font-bold text-emerald-400">{row.data.best}s</span>
+                                                                <div className="flex items-center gap-2">
+                                                                    {row.label !== 'Single' && row.data.current && row.data.current !== '-' && (
+                                                                        <span className="font-mono tracking-wide text-[10px] text-gray-500">cur: {row.data.current}s</span>
+                                                                    )}
+                                                                    <span className="font-bold text-emerald-400">{row.data.best}s</span>
+                                                                </div>
                                                             </div>
                                                         );
                                                     })}
